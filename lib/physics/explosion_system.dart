@@ -4,6 +4,7 @@ import 'package:flame_forge2d/flame_forge2d.dart';
 
 import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/terrain_cell.dart';
 
 /// Radial impulse force application for dynamite and explosives
 ///
@@ -32,15 +33,13 @@ class ExplosionSystem {
         final cellType = game.getCellType(x, y);
 
         // Check for chain reaction triggers
-        if (cellType == 5) {
-          // CellType.lava
+        if (cellType == CellType.lava.index) {
           chainExplosions.add(_ChainExplosion(
             position: Vector2(x.toDouble(), y.toDouble()),
             force: force * 0.6,
             radius: (radius * 0.7).round(),
           ));
-        } else if (cellType == 6) {
-          // CellType.gas
+        } else if (cellType == CellType.gas.index) {
           chainExplosions.add(_ChainExplosion(
             position: Vector2(x.toDouble(), y.toDouble()),
             force: force * 1.5,
@@ -70,7 +69,9 @@ class ExplosionSystem {
     for (int i = 0; i < chainExplosions.length; i++) {
       final chain = chainExplosions[i];
       Future.delayed(Duration(milliseconds: 100 + i * 50), () {
-        explode(chain.position, chain.radius, chain.force);
+        if (!game.isGameOver) {
+          explode(chain.position, chain.radius, chain.force);
+        }
       });
     }
   }
@@ -113,10 +114,12 @@ class ExplosionSystem {
     game.camera.viewfinder.position.x += offsetX;
     game.camera.viewfinder.position.y += offsetY;
 
-    // Decay back to normal over time (handled by game update)
+    // Decay back to normal over time
     Future.delayed(const Duration(milliseconds: 100), () {
-      game.camera.viewfinder.position.x -= offsetX;
-      game.camera.viewfinder.position.y -= offsetY;
+      if (!game.isGameOver) {
+        game.camera.viewfinder.position.x -= offsetX;
+        game.camera.viewfinder.position.y -= offsetY;
+      }
     });
   }
 }

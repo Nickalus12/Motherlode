@@ -17,6 +17,9 @@ class _InventoryPanelState extends State<InventoryPanel> {
   bool _justSold = false;
   double _lastSaleValue = 0;
 
+  static const _cardColor = Color(0xFF1C1C28);
+  static const _borderColor = Color(0xFF2A2A3A);
+
   @override
   Widget build(BuildContext context) {
     final cargo = widget.game.pod.cargoSystem;
@@ -26,33 +29,61 @@ class _InventoryPanelState extends State<InventoryPanel> {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          // Header
-          const Text(
-            'MINERAL PROCESSOR 3000',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 2,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Load your minerals for instant processing',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.5),
-              fontSize: 12,
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Cargo summary
+          // Header with mineral processor image
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.05),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.white12),
+              gradient: RadialGradient(
+                colors: [
+                  Colors.amber.withValues(alpha: 0.06),
+                  Colors.transparent,
+                ],
+                radius: 0.8,
+              ),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.asset(
+                'assets/images/buildings/mineral_processor.png',
+                height: 90,
+                fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'MINERAL PROCESSOR 3000',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 3,
+              shadows: [
+                Shadow(
+                  color: Colors.amber.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            'Load your minerals for instant processing',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.4),
+              fontSize: 11,
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Cargo summary
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: _cardColor,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: _borderColor),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -60,17 +91,22 @@ class _InventoryPanelState extends State<InventoryPanel> {
                 _buildSummaryItem(
                   'Weight',
                   '${cargo.currentWeight.toStringAsFixed(0)} kg',
-                  Colors.white70,
+                  Colors.white60,
+                  Icons.scale,
                 ),
+                Container(width: 1, height: 30, color: _borderColor),
                 _buildSummaryItem(
                   'Items',
                   '${items.length} types',
-                  Colors.white70,
+                  Colors.white60,
+                  Icons.layers,
                 ),
+                Container(width: 1, height: 30, color: _borderColor),
                 _buildSummaryItem(
                   'Total Value',
                   '\$${_formatCash(cargo.totalValue)}',
                   Colors.amber,
+                  Icons.monetization_on,
                 ),
               ],
             ),
@@ -85,11 +121,15 @@ class _InventoryPanelState extends State<InventoryPanel> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(
-                          Icons.inventory_2_outlined,
+                          _justSold
+                              ? Icons.check_circle_outline
+                              : Icons.inventory_2_outlined,
                           size: 48,
-                          color: Colors.white.withValues(alpha: 0.2),
+                          color: _justSold
+                              ? Colors.green.withValues(alpha: 0.5)
+                              : Colors.white.withValues(alpha: 0.12),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 10),
                         Text(
                           _justSold
                               ? 'Sold \$${_formatCash(_lastSaleValue)}!'
@@ -97,12 +137,20 @@ class _InventoryPanelState extends State<InventoryPanel> {
                           style: TextStyle(
                             color: _justSold
                                 ? Colors.green
-                                : Colors.white.withValues(alpha: 0.4),
-                            fontSize: 16,
+                                : Colors.white.withValues(alpha: 0.3),
+                            fontSize: 15,
                             fontWeight:
                                 _justSold ? FontWeight.bold : FontWeight.normal,
                           ),
                         ),
+                        if (_justSold)
+                          Text(
+                            'Minerals processed successfully',
+                            style: TextStyle(
+                              color: Colors.green.withValues(alpha: 0.5),
+                              fontSize: 11,
+                            ),
+                          ),
                       ],
                     ),
                   )
@@ -120,31 +168,49 @@ class _InventoryPanelState extends State<InventoryPanel> {
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
+              child: GestureDetector(
+                onTap: () {
                   setState(() {
                     _lastSaleValue = cargo.totalValue;
                     final saleValue = cargo.sellAll();
                     widget.game.addCash(saleValue);
-                    widget.game.pod.podBody.updateMass();
+                    widget.game.pod.updateMass();
                     _justSold = true;
                   });
-                  // Reset notification after delay
                   Future.delayed(const Duration(seconds: 3), () {
                     if (mounted) setState(() => _justSold = false);
                   });
                 },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.amber.shade800,
+                child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                ),
-                child: Text(
-                  'SELL ALL — \$${_formatCash(cargo.totalValue)}',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                    color: Colors.white,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.amber.shade800,
+                        Colors.orange.shade700,
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.amber.withValues(alpha: 0.5),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.amber.withValues(alpha: 0.25),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Text(
+                    'SELL ALL  \$${_formatCash(cargo.totalValue)}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 2,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
               ),
@@ -155,14 +221,18 @@ class _InventoryPanelState extends State<InventoryPanel> {
     );
   }
 
-  Widget _buildSummaryItem(String label, String value, Color valueColor) {
+  Widget _buildSummaryItem(
+      String label, String value, Color valueColor, IconData icon) {
     return Column(
       children: [
+        Icon(icon, color: valueColor.withValues(alpha: 0.5), size: 14),
+        const SizedBox(height: 3),
         Text(
           label,
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.5),
-            fontSize: 10,
+            color: Colors.white.withValues(alpha: 0.4),
+            fontSize: 9,
+            letterSpacing: 0.5,
           ),
         ),
         const SizedBox(height: 2),
@@ -170,7 +240,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
           value,
           style: TextStyle(
             color: valueColor,
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -181,25 +251,29 @@ class _InventoryPanelState extends State<InventoryPanel> {
   Widget _buildOreRow(CargoItem item) {
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.03),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        color: _cardColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _borderColor),
       ),
       child: Row(
         children: [
-          // Color swatch
+          // Ore color swatch with glow
           Container(
-            width: 24,
-            height: 24,
+            width: 28,
+            height: 28,
             decoration: BoxDecoration(
               color: item.ore.color,
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: item.ore.color.withValues(alpha: 0.5),
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: item.ore.glowColor,
-                  blurRadius: 4,
+                  color: item.ore.glowColor.withValues(alpha: 0.4),
+                  blurRadius: 6,
+                  spreadRadius: 0,
                 ),
               ],
             ),
@@ -219,10 +293,11 @@ class _InventoryPanelState extends State<InventoryPanel> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                const SizedBox(height: 1),
                 Text(
-                  '${item.count}x  •  ${item.totalWeight.toInt()} kg',
+                  '${item.count}x  ${item.totalWeight.toInt()} kg',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.5),
+                    color: Colors.white.withValues(alpha: 0.4),
                     fontSize: 11,
                   ),
                 ),
@@ -236,16 +311,22 @@ class _InventoryPanelState extends State<InventoryPanel> {
             children: [
               Text(
                 '\$${_formatCash(item.totalValue)}',
-                style: const TextStyle(
+                style: TextStyle(
                   color: Colors.amber,
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
+                  shadows: [
+                    Shadow(
+                      color: Colors.amber.withValues(alpha: 0.3),
+                      blurRadius: 4,
+                    ),
+                  ],
                 ),
               ),
               Text(
                 '\$${item.ore.value}/ea',
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.4),
+                  color: Colors.white.withValues(alpha: 0.3),
                   fontSize: 10,
                 ),
               ),

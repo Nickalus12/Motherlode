@@ -26,8 +26,7 @@ enum CreatureState {
 /// - Health points, damage value, speed stat
 /// - Eye glow component (point light)
 /// - Death particle burst + cash drop
-abstract class Creature extends BodyComponent
-    with ContactCallbacks, HasGameReference<MotherlodeGame> {
+abstract class Creature extends BodyComponent with ContactCallbacks {
   final String name;
   final double maxHealth;
   final double damage; // Damage dealt to pod per second on contact
@@ -36,11 +35,12 @@ abstract class Creature extends BodyComponent
   final Color eyeColor;
   final double cashDrop;
 
+  MotherlodeGame get motherlodeGame => game as MotherlodeGame;
+
   double health;
   CreatureState state = CreatureState.wander;
   double _stateTimer = 0;
   double _wanderAngle = 0;
-  final Random _random = Random();
 
   Creature({
     required this.name,
@@ -89,7 +89,7 @@ abstract class Creature extends BodyComponent
     _stateTimer += dt;
 
     // Get pod reference for AI
-    final pod = game.pod;
+    final pod = motherlodeGame.pod;
     final distToPod = position.distanceTo(pod.position);
 
     // Update state machine
@@ -228,10 +228,10 @@ abstract class Creature extends BodyComponent
     state = CreatureState.dead;
 
     // Drop cash
-    game.addCash(cashDrop);
+    motherlodeGame.addCash(cashDrop);
 
     // Emit death particles
-    game.particleSystem.emitOreSparkle(position, bodyColor);
+    motherlodeGame.particleSystem.emitOreSparkle(position, bodyColor);
 
     // Remove from world after short delay
     Future.delayed(const Duration(milliseconds: 500), () {

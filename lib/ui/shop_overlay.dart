@@ -5,6 +5,7 @@ import 'package:motherlode/data/upgrade_definitions.dart';
 import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/ui/inventory_panel.dart';
 import 'package:motherlode/ui/upgrade_tree.dart';
+import 'package:motherlode/ui/upgrade_visuals.dart';
 
 /// Surface shop overlay with fuel station, mineral processor,
 /// upgrade shop, and consumables store
@@ -26,6 +27,12 @@ class _ShopOverlayState extends State<ShopOverlay>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
+  static const _bgColor = Color(0xFF0D0D12);
+  static const _surfaceColor = Color(0xFF16161E);
+  static const _cardColor = Color(0xFF1C1C28);
+  static const _accentAmber = Color(0xFFF5A623);
+  static const _borderColor = Color(0xFF2A2A3A);
+
   @override
   void initState() {
     super.initState();
@@ -41,28 +48,12 @@ class _ShopOverlayState extends State<ShopOverlay>
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.black87,
+      color: _bgColor,
       child: SafeArea(
         child: Column(
           children: [
-            // Header with cash and close button
             _buildHeader(),
-
-            // Tab bar
-            TabBar(
-              controller: _tabController,
-              indicatorColor: Colors.amber,
-              labelColor: Colors.amber,
-              unselectedLabelColor: Colors.white54,
-              tabs: const [
-                Tab(text: 'FUEL', icon: Icon(Icons.local_gas_station, size: 18)),
-                Tab(text: 'SELL', icon: Icon(Icons.attach_money, size: 18)),
-                Tab(text: 'UPGRADE', icon: Icon(Icons.arrow_upward, size: 18)),
-                Tab(text: 'ITEMS', icon: Icon(Icons.inventory_2, size: 18)),
-              ],
-            ),
-
-            // Tab content
+            _buildTabBar(),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -81,90 +72,240 @@ class _ShopOverlayState extends State<ShopOverlay>
   }
 
   Widget _buildHeader() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: _surfaceColor,
+        border: Border(
+          bottom: BorderSide(color: _borderColor),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            '\$${_formatCash(widget.game.playerCash)}',
-            style: const TextStyle(
-              color: Colors.amber,
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
+          // Cash display
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  _accentAmber.withValues(alpha: 0.15),
+                  _accentAmber.withValues(alpha: 0.05),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _accentAmber.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.monetization_on, color: _accentAmber, size: 18),
+                const SizedBox(width: 6),
+                Text(
+                  '\$${_formatCash(widget.game.playerCash)}',
+                  style: TextStyle(
+                    color: _accentAmber,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    shadows: [
+                      Shadow(
+                        color: _accentAmber.withValues(alpha: 0.4),
+                        blurRadius: 6,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          IconButton(
-            onPressed: widget.onClose,
-            icon: const Icon(Icons.close, color: Colors.white54),
+          // Close button
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            child: IconButton(
+              onPressed: widget.onClose,
+              icon: const Icon(Icons.close, color: Colors.white54, size: 20),
+              padding: const EdgeInsets.all(8),
+              constraints: const BoxConstraints(),
+            ),
           ),
         ],
       ),
     );
   }
 
-  /// Fuel station - fill tank
+  Widget _buildTabBar() {
+    return Container(
+      color: _surfaceColor,
+      child: TabBar(
+        controller: _tabController,
+        indicatorColor: _accentAmber,
+        indicatorWeight: 3,
+        labelColor: _accentAmber,
+        unselectedLabelColor: Colors.white38,
+        dividerColor: _borderColor,
+        labelStyle: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1,
+        ),
+        unselectedLabelStyle: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.normal,
+        ),
+        tabs: const [
+          Tab(text: 'FUEL', icon: Icon(Icons.local_gas_station, size: 20)),
+          Tab(text: 'SELL', icon: Icon(Icons.attach_money, size: 20)),
+          Tab(text: 'UPGRADE', icon: Icon(Icons.arrow_upward, size: 20)),
+          Tab(text: 'ITEMS', icon: Icon(Icons.inventory_2, size: 20)),
+        ],
+      ),
+    );
+  }
+
   Widget _buildFuelStation() {
     final fuelSystem = widget.game.fuelSystem;
     final needed = fuelSystem.maxFuel - fuelSystem.currentFuel;
-    final cost = needed * 10; // $10 per liter
+    final cost = needed * 10;
+    final fuelPercent = (fuelSystem.currentFuel / fuelSystem.maxFuel * 100).toInt();
 
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.local_gas_station, size: 64, color: Colors.green),
-          const SizedBox(height: 16),
-          const Text(
+          // Animated fuel gauge visual
+          FuelTankVisual(
+            level: widget.game.fuelTankLevel,
+            maxLevel: UpgradeDefinitions.fuelTanks.maxLevel,
+            fillPercent: (fuelSystem.currentFuel / fuelSystem.maxFuel)
+                .clamp(0.0, 1.0),
+          ),
+          const SizedBox(height: 12),
+
+          Text(
             'FUEL STATION',
             style: TextStyle(
               color: Colors.white,
-              fontSize: 24,
+              fontSize: 22,
               fontWeight: FontWeight.bold,
-              letterSpacing: 3,
+              letterSpacing: 4,
+              shadows: [
+                Shadow(
+                  color: Colors.green.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 24),
-          Text(
-            'Current: ${fuelSystem.currentFuel.toStringAsFixed(1)}L / '
-            '${fuelSystem.maxFuel.toStringAsFixed(1)}L',
-            style: const TextStyle(color: Colors.white70, fontSize: 16),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Need: ${needed.toStringAsFixed(1)}L',
-            style: const TextStyle(color: Colors.white54, fontSize: 14),
-          ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
 
-          // Fill tank button
+          // Fuel level bar
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: _cardColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _borderColor),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Fuel Level',
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
+                    ),
+                    Text(
+                      '$fuelPercent%',
+                      style: TextStyle(
+                        color: fuelPercent > 50 ? Colors.green : Colors.orange,
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: SizedBox(
+                    height: 12,
+                    child: LinearProgressIndicator(
+                      value: fuelSystem.currentFuel / fuelSystem.maxFuel,
+                      backgroundColor: Colors.white.withValues(alpha: 0.05),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        fuelPercent > 50 ? Colors.green : Colors.orange,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${fuelSystem.currentFuel.toStringAsFixed(1)}L / '
+                  '${fuelSystem.maxFuel.toStringAsFixed(1)}L',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Fill button
           if (needed > 0.1)
-            ElevatedButton(
-              onPressed: () {
-                if (widget.game.spendCash(cost)) {
-                  setState(() {
-                    fuelSystem.addFuel(needed);
-                  });
-                }
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green.shade800,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
-              ),
-              child: Text(
-                'FILL TANK — \$${cost.toStringAsFixed(0)}',
-                style: const TextStyle(fontSize: 16, color: Colors.white),
+            SizedBox(
+              width: double.infinity,
+              child: _buildActionButton(
+                label: 'FILL TANK',
+                cost: '\$${cost.toStringAsFixed(0)}',
+                color: Colors.green,
+                onPressed: () {
+                  if (widget.game.spendCash(cost)) {
+                    setState(() {
+                      fuelSystem.addFuel(needed);
+                    });
+                  }
+                },
               ),
             )
           else
-            const Text(
-              'TANK FULL',
-              style: TextStyle(
-                color: Colors.green,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              width: double.infinity,
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+              ),
+              child: Text(
+                'TANK FULL',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.green,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 2,
+                  shadows: [
+                    Shadow(
+                      color: Colors.green.withValues(alpha: 0.4),
+                      blurRadius: 6,
+                    ),
+                  ],
+                ),
               ),
             ),
 
@@ -172,8 +313,8 @@ class _ShopOverlayState extends State<ShopOverlay>
           Text(
             '\$10 per liter',
             style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.4),
-              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.3),
+              fontSize: 11,
             ),
           ),
         ],
@@ -181,25 +322,29 @@ class _ShopOverlayState extends State<ShopOverlay>
     );
   }
 
-  /// Mineral processor - sell all ore
   Widget _buildMineralProcessor() {
     return InventoryPanel(game: widget.game);
   }
 
-  /// Consumables shop
   Widget _buildConsumablesShop() {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Padding(
-          padding: EdgeInsets.only(bottom: 16),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 16),
           child: Text(
             'SUPPLIES',
             style: TextStyle(
               color: Colors.white,
-              fontSize: 20,
+              fontSize: 18,
               fontWeight: FontWeight.bold,
-              letterSpacing: 3,
+              letterSpacing: 4,
+              shadows: [
+                Shadow(
+                  color: _accentAmber.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                ),
+              ],
             ),
             textAlign: TextAlign.center,
           ),
@@ -207,6 +352,8 @@ class _ShopOverlayState extends State<ShopOverlay>
         _buildConsumableItem(
           SpecialItems.reserveFuelTank,
           widget.game.reserveFuelCount,
+          Icons.local_gas_station,
+          Colors.green,
           () {
             if (widget.game.spendCash(SpecialItems.reserveFuelTank.cost.toDouble())) {
               setState(() => widget.game.reserveFuelCount++);
@@ -216,6 +363,8 @@ class _ShopOverlayState extends State<ShopOverlay>
         _buildConsumableItem(
           SpecialItems.hullRepairNanobots,
           widget.game.nanobotCount,
+          Icons.build,
+          Colors.cyan,
           () {
             if (widget.game.spendCash(SpecialItems.hullRepairNanobots.cost.toDouble())) {
               setState(() => widget.game.nanobotCount++);
@@ -225,6 +374,8 @@ class _ShopOverlayState extends State<ShopOverlay>
         _buildConsumableItem(
           SpecialItems.dynamite,
           widget.game.dynamiteCount,
+          Icons.flash_on,
+          Colors.orange,
           () {
             if (widget.game.spendCash(SpecialItems.dynamite.cost.toDouble())) {
               setState(() => widget.game.dynamiteCount++);
@@ -234,6 +385,8 @@ class _ShopOverlayState extends State<ShopOverlay>
         _buildConsumableItem(
           SpecialItems.plasticExplosive,
           widget.game.plasticExplosiveCount,
+          Icons.local_fire_department,
+          Colors.red,
           () {
             if (widget.game.spendCash(SpecialItems.plasticExplosive.cost.toDouble())) {
               setState(() => widget.game.plasticExplosiveCount++);
@@ -243,6 +396,8 @@ class _ShopOverlayState extends State<ShopOverlay>
         _buildConsumableItem(
           SpecialItems.quantumTeleporter,
           widget.game.teleporterCount,
+          Icons.bolt,
+          Colors.purple,
           () {
             if (widget.game.spendCash(SpecialItems.quantumTeleporter.cost.toDouble())) {
               setState(() => widget.game.teleporterCount++);
@@ -252,6 +407,8 @@ class _ShopOverlayState extends State<ShopOverlay>
         _buildConsumableItem(
           SpecialItems.matterTransmitter,
           widget.game.transmitterCount,
+          Icons.star,
+          Colors.amber,
           () {
             if (widget.game.spendCash(SpecialItems.matterTransmitter.cost.toDouble())) {
               setState(() => widget.game.transmitterCount++);
@@ -265,31 +422,190 @@ class _ShopOverlayState extends State<ShopOverlay>
   Widget _buildConsumableItem(
     ConsumableItem item,
     int currentCount,
+    IconData icon,
+    Color accentColor,
     VoidCallback onBuy,
   ) {
     final canAfford = widget.game.playerCash >= item.cost;
-    return Card(
-      color: Colors.white.withValues(alpha: 0.05),
+    return Container(
       margin: const EdgeInsets.only(bottom: 8),
-      child: ListTile(
-        leading: Text(item.icon, style: const TextStyle(fontSize: 28)),
-        title: Text(
-          item.name,
-          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _cardColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: canAfford
+              ? accentColor.withValues(alpha: 0.2)
+              : _borderColor,
         ),
-        subtitle: Text(
-          '${item.description}\nOwned: $currentCount  |  Hotkey: [${item.hotkey}]',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 12),
-        ),
-        trailing: ElevatedButton(
-          onPressed: canAfford ? onBuy : null,
-          style: ElevatedButton.styleFrom(
-            backgroundColor:
-                canAfford ? Colors.green.shade800 : Colors.grey.shade800,
+      ),
+      child: Row(
+        children: [
+          // Icon
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  accentColor.withValues(alpha: 0.2),
+                  accentColor.withValues(alpha: 0.05),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: accentColor.withValues(alpha: 0.2)),
+            ),
+            child: Icon(icon, color: accentColor, size: 22),
           ),
-          child: Text(
-            '\$${item.cost}',
-            style: const TextStyle(color: Colors.white),
+          const SizedBox(width: 12),
+
+          // Info
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  item.description,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.4),
+                    fontSize: 11,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Text(
+                      'Owned: $currentCount',
+                      style: TextStyle(
+                        color: accentColor.withValues(alpha: 0.7),
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(
+                        '[${item.hotkey}]',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.4),
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          // Buy button
+          _buildSmallBuyButton(
+            cost: '\$${item.cost}',
+            canAfford: canAfford,
+            onPressed: canAfford ? onBuy : null,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSmallBuyButton({
+    required String cost,
+    required bool canAfford,
+    VoidCallback? onPressed,
+  }) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: canAfford
+              ? LinearGradient(colors: [
+                  Colors.green.shade800,
+                  Colors.green.shade700,
+                ])
+              : null,
+          color: canAfford ? null : Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: canAfford
+                ? Colors.green.withValues(alpha: 0.4)
+                : Colors.white.withValues(alpha: 0.1),
+          ),
+          boxShadow: canAfford
+              ? [
+                  BoxShadow(
+                    color: Colors.green.withValues(alpha: 0.2),
+                    blurRadius: 6,
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          cost,
+          style: TextStyle(
+            color: canAfford ? Colors.white : Colors.white38,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required String label,
+    required String cost,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return GestureDetector(
+      onTap: onPressed,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              color.withValues(alpha: 0.8),
+              color.withValues(alpha: 0.6),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
+          boxShadow: [
+            BoxShadow(
+              color: color.withValues(alpha: 0.3),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Text(
+          '$label  $cost',
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 2,
           ),
         ),
       ),

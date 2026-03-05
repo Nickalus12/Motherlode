@@ -5,7 +5,6 @@ import 'package:flame_forge2d/flame_forge2d.dart';
 
 import 'package:motherlode/entities/creatures/creature.dart';
 import 'package:motherlode/entities/pod/pod.dart';
-import 'package:motherlode/motherlode_game.dart';
 
 /// Cave Worm - tunnels through solid terrain, creates persistent tunnels
 ///
@@ -72,10 +71,10 @@ class CaveWorm extends Creature {
     final targetX = headX + dx;
     final targetY = headY + dy;
 
-    final cellType = game.getCellType(targetX, targetY);
+    final cellType = motherlodeGame.getCellType(targetX, targetY);
     // Only tunnel through solid cells (not empty, lava, gas)
     if (cellType >= 1 && cellType <= 4) {
-      game.removeTerrainCell(targetX, targetY);
+      motherlodeGame.removeTerrainCell(targetX, targetY);
     }
 
     // Slightly adjust movement angle for natural tunneling

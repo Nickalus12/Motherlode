@@ -58,7 +58,7 @@ class RockCrab extends Creature {
 
       // Reverse at walls
       final frontX = position.x + _patrolDirection * 1.5;
-      final cellType = game.getCellType(frontX.round(), position.y.round());
+      final cellType = motherlodeGame.getCellType(frontX.round(), position.y.round());
       if (cellType != 0) {
         // Not empty = wall
         _patrolDirection *= -1;

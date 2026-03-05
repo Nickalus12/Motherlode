@@ -1,244 +1,369 @@
 import 'dart:math';
-import 'dart:ui';
+import 'dart:ui' as ui;
 
 import 'package:flame/components.dart';
+import 'package:flame/flame.dart';
 
 import 'package:motherlode/entities/pod/pod.dart';
+import 'package:motherlode/motherlode_game.dart';
 
-/// Procedurally renders the mining pod sprite, drill arm, and engine exhaust
+/// Renders the mining pod using pixel art sprites with animated drill sheets.
 ///
-/// No sprite sheets - everything is drawn with Canvas primitives
-class PodRenderer extends Component {
+/// Hull: individual frame PNGs (idle_0..3, move_left, move_right, base)
+/// Drills: 4×4 sprite sheets (96×96, each frame 24×24), 7 tiers (0-6)
+class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
   final Pod pod;
   double _time = 0;
 
+  // Hull sprites per state
+  final List<ui.Image> _idleFrames = [];
+  ui.Image? _baseImage;
+  ui.Image? _moveLeftImage;
+  ui.Image? _moveRightImage;
+
+  // Drill sprite sheets (96×96, 4×4 grid = 16 frames at 24×24 each)
+  final Map<int, ui.Image> _drillSheets = {};
+
+  // Sprite sheet layout
+  static const int _sheetCols = 4;
+  static const int _sheetRows = 4;
+  static const int _drillFrameCount = 16;
+
+  // Drill tier → asset path
+  static const _drillAssets = {
+    0: 'drills/drill_0/sheet.png',
+    1: 'drills/drill_1/sheet.png',
+    2: 'drills/drill_2/sheet.png',
+    3: 'drills/drill_3/sheet.png',
+    4: 'drills/drill_4/sheet.png',
+    5: 'drills/drill_5/sheet.png',
+    6: 'drills/drill_6/sheet.png',
+  };
+
+  // Animation timing
+  int _idleFrame = 0;
+  double _idleTimer = 0;
+  static const double _idleFps = 4.0;
+
+  int _drillFrame = 0;
+  double _drillTimer = 0;
+  static const double _drillFps = 12.0;
+
+  // Damage flash
+  double _damageFlash = 0;
+  double _lastHull = -1;
+
   PodRenderer({required this.pod});
+
+  @override
+  Future<void> onLoad() async {
+    await super.onLoad();
+
+    // Load hull base
+    _baseImage = await _tryLoad('pod/hull_0/base.png');
+
+    // Load idle animation frames
+    for (int i = 0; i < 4; i++) {
+      final img = await _tryLoad('pod/hull_0/idle_$i.png');
+      if (img != null) _idleFrames.add(img);
+    }
+
+    // Load directional sprites
+    _moveLeftImage = await _tryLoad('pod/hull_0/move_left.png');
+    _moveRightImage = await _tryLoad('pod/hull_0/move_right.png');
+
+    // Load all drill sprite sheets
+    for (final entry in _drillAssets.entries) {
+      final img = await _tryLoad(entry.value);
+      if (img != null) _drillSheets[entry.key] = img;
+    }
+  }
+
+  Future<ui.Image?> _tryLoad(String path) async {
+    try {
+      return await Flame.images.load(path);
+    } catch (_) {
+      return null;
+    }
+  }
 
   @override
   void update(double dt) {
     super.update(dt);
     _time += dt;
+
+    // Idle frame cycling
+    _idleTimer += dt;
+    if (_idleTimer >= 1.0 / _idleFps && _idleFrames.isNotEmpty) {
+      _idleTimer = 0;
+      _idleFrame = (_idleFrame + 1) % _idleFrames.length;
+    }
+
+    // Drill frame cycling (only when drilling)
+    if (pod.state == PodState.drilling) {
+      _drillTimer += dt;
+      if (_drillTimer >= 1.0 / _drillFps) {
+        _drillTimer = 0;
+        _drillFrame = (_drillFrame + 1) % _drillFrameCount;
+      }
+    }
+
+    // Detect hull damage for flash effect
+    final currentHull = game.hullSystem.currentHull;
+    if (_lastHull >= 0 && currentHull < _lastHull) {
+      _damageFlash = 1.0;
+    }
+    _lastHull = currentHull;
+    if (_damageFlash > 0) {
+      _damageFlash = (_damageFlash - dt * 4).clamp(0.0, 1.0);
+    }
   }
 
   @override
-  void render(Canvas canvas) {
+  void render(ui.Canvas canvas) {
     canvas.save();
 
-    // Pod body (rounded trapezoid shape)
-    _drawBody(canvas);
+    // Drilling vibration offset
+    if (pod.state == PodState.drilling) {
+      final shake = sin(_time * 40) * 0.03;
+      canvas.translate(shake, 0);
+    }
 
-    // Cockpit window
-    _drawCockpit(canvas);
+    // Draw hull
+    _drawHull(canvas);
 
-    // Drill arm at bottom
-    _drawDrill(canvas);
+    // Draw drill below hull (only when drilling or grounded)
+    if (pod.state == PodState.drilling ||
+        pod.state == PodState.grounded ||
+        pod.state == PodState.idle) {
+      _drawDrill(canvas);
+    }
 
-    // Engine exhausts
+    // Procedural exhaust flames
     if (pod.thrustUp || pod.state == PodState.flying) {
       _drawExhaust(canvas);
     }
 
-    // Headlight beam
-    _drawHeadlight(canvas);
+    // Damage white flash overlay
+    if (_damageFlash > 0) {
+      _drawDamageFlash(canvas);
+    }
 
-    // Damage indicators
+    // Status indicators
     if (pod.state != PodState.dead) {
       _drawStatusIndicators(canvas);
+    }
+
+    // Drilling sparks
+    if (pod.state == PodState.drilling) {
+      _drawDrillSparks(canvas);
     }
 
     canvas.restore();
   }
 
-  void _drawBody(Canvas canvas) {
-    final bodyPath = Path();
+  void _drawHull(ui.Canvas canvas) {
+    // Choose hull image based on state
+    ui.Image? img;
+    if (pod.thrustLeft && _moveLeftImage != null) {
+      img = _moveLeftImage;
+    } else if (pod.thrustRight && _moveRightImage != null) {
+      img = _moveRightImage;
+    } else if (_idleFrames.isNotEmpty) {
+      img = _idleFrames[_idleFrame];
+    } else {
+      img = _baseImage;
+    }
 
-    // Main hull shape (trapezoid with rounded feel)
-    bodyPath.moveTo(-0.7, -0.8); // Top-left
-    bodyPath.lineTo(0.7, -0.8); // Top-right
-    bodyPath.lineTo(0.8, 0.4); // Bottom-right (wider)
-    bodyPath.lineTo(0.6, 0.9); // Bottom-right corner
-    bodyPath.lineTo(-0.6, 0.9); // Bottom-left corner
-    bodyPath.lineTo(-0.8, 0.4); // Bottom-left (wider)
-    bodyPath.close();
-
-    // Main body fill
-    final bodyPaint = Paint()
-      ..color = const Color(0xFF4A6741) // Military green
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(bodyPath, bodyPaint);
-
-    // Outline
-    final outlinePaint = Paint()
-      ..color = const Color(0xFF2D3F28)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.06;
-    canvas.drawPath(bodyPath, outlinePaint);
-
-    // Side panels
-    final panelPaint = Paint()
-      ..color = const Color(0xFF3D5A36)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(
-      const Rect.fromLTWH(-0.65, -0.3, 0.2, 0.8),
-      panelPaint,
-    );
-    canvas.drawRect(
-      const Rect.fromLTWH(0.45, -0.3, 0.2, 0.8),
-      panelPaint,
-    );
-
-    // Rivets / detail dots
-    final rivetPaint = Paint()
-      ..color = const Color(0xFF5A7A50)
-      ..style = PaintingStyle.fill;
-    for (final offset in [
-      const Offset(-0.4, -0.5),
-      const Offset(0.4, -0.5),
-      const Offset(-0.5, 0.2),
-      const Offset(0.5, 0.2),
-    ]) {
-      canvas.drawCircle(offset, 0.04, rivetPaint);
+    if (img != null) {
+      _drawImage(canvas, img, const ui.Offset(0, -0.15), 1.8, 1.8);
+    } else {
+      _drawBodyFallback(canvas);
     }
   }
 
-  void _drawCockpit(Canvas canvas) {
-    // Cockpit glass (slightly tinted blue)
-    final glassPath = Path();
-    glassPath.moveTo(-0.35, -0.75);
-    glassPath.lineTo(0.35, -0.75);
-    glassPath.lineTo(0.3, -0.35);
-    glassPath.lineTo(-0.3, -0.35);
-    glassPath.close();
+  void _drawDrill(ui.Canvas canvas) {
+    final drillLevel = game.drillLevel.clamp(0, 6);
+    final sheet = _drillSheets[drillLevel];
 
-    final glassPaint = Paint()
-      ..color = const Color(0x8044AACC)
-      ..style = PaintingStyle.fill;
-    canvas.drawPath(glassPath, glassPaint);
+    if (sheet != null) {
+      // Sprite sheet: 96×96 with 4×4 grid = 24×24 per frame
+      final frameW = sheet.width / _sheetCols;
+      final frameH = sheet.height / _sheetRows;
 
-    // Glass reflection
-    final reflectionPaint = Paint()
-      ..color = const Color(0x3066DDFF)
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(
-      const Rect.fromLTWH(-0.2, -0.7, 0.15, 0.15),
-      reflectionPaint,
-    );
-  }
+      // Pick frame: animate when drilling, frame 0 otherwise
+      final frame = pod.state == PodState.drilling ? _drillFrame : 0;
+      final col = frame % _sheetCols;
+      final row = frame ~/ _sheetCols;
 
-  void _drawDrill(Canvas canvas) {
-    // Drill arm
-    final drillColor = pod.state == PodState.drilling
-        ? Color.lerp(
-            const Color(0xFFAAAAAA),
-            const Color(0xFFFFAA00),
-            (sin(_time * 20) + 1) / 2,
-          )!
-        : const Color(0xFFAAAAAA);
+      final srcRect = ui.Rect.fromLTWH(
+        col * frameW,
+        row * frameH,
+        frameW,
+        frameH,
+      );
 
-    // Drill shaft
-    final shaftPaint = Paint()
-      ..color = drillColor
-      ..style = PaintingStyle.fill;
-    canvas.drawRect(
-      const Rect.fromLTWH(-0.08, 0.85, 0.16, 0.35),
-      shaftPaint,
-    );
+      // Drill sits below hull, within physics bounds
+      const drillWidth = 0.6;
+      const drillHeight = 0.6;
+      final dstRect = ui.Rect.fromCenter(
+        center: const ui.Offset(0, 0.85),
+        width: drillWidth,
+        height: drillHeight,
+      );
 
-    // Drill bit (triangle)
-    final bitPath = Path();
-    bitPath.moveTo(-0.12, 1.2);
-    bitPath.lineTo(0.12, 1.2);
-    bitPath.lineTo(0.0, 1.45);
-    bitPath.close();
-
-    canvas.drawPath(bitPath, shaftPaint);
-
-    // Drill rotation effect while drilling
-    if (pod.state == PodState.drilling) {
-      final spiralPaint = Paint()
-        ..color = const Color(0x60FFFFFF)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.03;
-
-      final rotation = _time * 15;
-      for (int i = 0; i < 3; i++) {
-        final angle = rotation + i * (2 * pi / 3);
-        final y = 0.9 + (sin(angle) + 1) * 0.15;
-        final x = cos(angle) * 0.06;
-        canvas.drawCircle(Offset(x, y), 0.02, spiralPaint);
+      final paint = ui.Paint();
+      // Glow pulse when drilling
+      if (pod.state == PodState.drilling) {
+        paint.colorFilter = ui.ColorFilter.mode(
+          ui.Color.from(
+            alpha: (sin(_time * 10) + 1) * 0.1,
+            red: 1.0,
+            green: 0.7,
+            blue: 0.0,
+          ),
+          ui.BlendMode.plus,
+        );
       }
+
+      canvas.drawImageRect(sheet, srcRect, dstRect, paint);
+    } else {
+      _drawDrillFallback(canvas);
     }
   }
 
-  void _drawExhaust(Canvas canvas) {
-    // Engine nozzles on sides
-    final nozzlePaint = Paint()
-      ..color = const Color(0xFF333333)
-      ..style = PaintingStyle.fill;
-
-    canvas.drawRect(
-      const Rect.fromLTWH(-0.85, 0.2, 0.15, 0.2),
-      nozzlePaint,
+  void _drawImage(
+    ui.Canvas canvas,
+    ui.Image img,
+    ui.Offset center,
+    double width,
+    double height,
+  ) {
+    final srcRect = ui.Rect.fromLTWH(
+      0, 0, img.width.toDouble(), img.height.toDouble(),
     );
-    canvas.drawRect(
-      const Rect.fromLTWH(0.7, 0.2, 0.15, 0.2),
-      nozzlePaint,
+    final dstRect = ui.Rect.fromCenter(
+      center: center,
+      width: width,
+      height: height,
     );
+    canvas.drawImageRect(img, srcRect, dstRect, ui.Paint());
+  }
 
-    // Exhaust flames
+  void _drawDamageFlash(ui.Canvas canvas) {
+    final flashAlpha = (_damageFlash * 0.6).clamp(0.0, 1.0);
+    canvas.drawRect(
+      ui.Rect.fromCenter(
+        center: const ui.Offset(0, -0.15),
+        width: 1.8,
+        height: 1.8,
+      ),
+      ui.Paint()
+        ..color = ui.Color.from(
+          alpha: flashAlpha,
+          red: 1.0,
+          green: 1.0,
+          blue: 1.0,
+        )
+        ..blendMode = ui.BlendMode.plus,
+    );
+  }
+
+  void _drawDrillSparks(ui.Canvas canvas) {
+    final random = Random((_time * 30).toInt());
+    final sparkPaint = ui.Paint()..style = ui.PaintingStyle.fill;
+
+    for (int i = 0; i < 6; i++) {
+      final sparkX = (random.nextDouble() - 0.5) * 0.5;
+      final sparkY = 1.1 + random.nextDouble() * 0.2;
+      final size = 0.02 + random.nextDouble() * 0.03;
+      final t = random.nextDouble();
+      sparkPaint.color = ui.Color.lerp(
+        const ui.Color(0xFFFFFFCC),
+        const ui.Color(0xFFFF6600),
+        t,
+      )!;
+      canvas.drawCircle(ui.Offset(sparkX, sparkY), size, sparkPaint);
+    }
+  }
+
+  void _drawExhaust(ui.Canvas canvas) {
     final flamePhase = _time * 20;
     for (int side = -1; side <= 1; side += 2) {
-      final baseX = side * 0.77;
+      final baseX = side * 0.55;
       for (int i = 0; i < 4; i++) {
         final flicker = sin(flamePhase + i * 1.5) * 0.1;
-        final flameLength = 0.3 + i * 0.08 + flicker;
-        final flameWidth = 0.06 - i * 0.01;
+        final flameLength = 0.25 + i * 0.06 + flicker;
+        final flameWidth = 0.05 - i * 0.008;
         final t = i / 4.0;
-        final flameColor = Color.lerp(
-          const Color(0xFFFFFFCC), // White-hot
-          const Color(0xFFFF4400), // Orange
+        final flameColor = ui.Color.lerp(
+          const ui.Color(0xFFFFFFCC),
+          const ui.Color(0xFFFF4400),
           t,
         )!.withValues(alpha: 1.0 - t * 0.5);
 
         canvas.drawRect(
-          Rect.fromCenter(
-            center: Offset(baseX, 0.5 + flameLength / 2),
+          ui.Rect.fromCenter(
+            center: ui.Offset(baseX, 0.7 + flameLength / 2),
             width: flameWidth,
             height: flameLength,
           ),
-          Paint()
+          ui.Paint()
             ..color = flameColor
-            ..style = PaintingStyle.fill,
+            ..style = ui.PaintingStyle.fill,
         );
       }
     }
   }
 
-  void _drawHeadlight(Canvas canvas) {
-    // Small headlight dot at top
-    final lightPaint = Paint()
-      ..color = const Color(0xCCFFFFAA)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(const Offset(0, -0.8), 0.06, lightPaint);
-
-    // Light glow
-    final glowPaint = Paint()
-      ..color = const Color(0x30FFFFCC)
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(const Offset(0, -0.8), 0.12, glowPaint);
-  }
-
-  void _drawStatusIndicators(Canvas canvas) {
-    // Cargo weight indicator (small bar on side)
+  void _drawStatusIndicators(ui.Canvas canvas) {
     final cargoRatio = pod.cargoSystem.fillRatio;
     if (cargoRatio > 0) {
       final cargoColor = cargoRatio > 0.9
-          ? const Color(0xFFFF0000)
-          : const Color(0xFF00CCCC);
+          ? const ui.Color(0xFFFF0000)
+          : const ui.Color(0xFF00CCCC);
       canvas.drawRect(
-        Rect.fromLTWH(-0.9, 0.6 - cargoRatio * 0.5, 0.04, cargoRatio * 0.5),
-        Paint()..color = cargoColor,
+        ui.Rect.fromLTWH(
+            -0.85, 0.3 - cargoRatio * 0.5, 0.04, cargoRatio * 0.5),
+        ui.Paint()..color = cargoColor,
       );
     }
+  }
+
+  // Fallback renderers in case sprites fail to load
+  void _drawBodyFallback(ui.Canvas canvas) {
+    final bodyPath = ui.Path();
+    bodyPath.moveTo(-0.7, -1.0);
+    bodyPath.lineTo(0.7, -1.0);
+    bodyPath.lineTo(0.8, 0.3);
+    bodyPath.lineTo(0.6, 0.7);
+    bodyPath.lineTo(-0.6, 0.7);
+    bodyPath.lineTo(-0.8, 0.3);
+    bodyPath.close();
+
+    canvas.drawPath(bodyPath, ui.Paint()..color = const ui.Color(0xFF4A6741));
+    canvas.drawPath(
+      bodyPath,
+      ui.Paint()
+        ..color = const ui.Color(0xFF2D3F28)
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = 0.06,
+    );
+  }
+
+  void _drawDrillFallback(ui.Canvas canvas) {
+    final shaftPaint = ui.Paint()
+      ..color = const ui.Color(0xFFAAAAAA)
+      ..style = ui.PaintingStyle.fill;
+    canvas.drawRect(
+      const ui.Rect.fromLTWH(-0.08, 0.7, 0.16, 0.3),
+      shaftPaint,
+    );
+    final bitPath = ui.Path();
+    bitPath.moveTo(-0.1, 1.0);
+    bitPath.lineTo(0.1, 1.0);
+    bitPath.lineTo(0.0, 1.15);
+    bitPath.close();
+    canvas.drawPath(bitPath, shaftPaint);
   }
 }

@@ -15,9 +15,9 @@ class TerrainRenderer extends Component with HasGameReference<MotherlodeGame> {
     final visibleChunks = _getVisibleChunks();
 
     for (final chunk in visibleChunks) {
-      if (chunk.isDirty) {
+      if (chunk.isDirty || chunk.cachedPicture == null) {
         _renderChunkToCache(canvas, chunk);
-      } else if (chunk.cachedPicture != null) {
+      } else {
         canvas.save();
         canvas.translate(
           chunk.chunkX * GameConstants.chunkSize.toDouble(),
@@ -58,18 +58,27 @@ class TerrainRenderer extends Component with HasGameReference<MotherlodeGame> {
     final recorder = PictureRecorder();
     final recordCanvas = Canvas(recorder);
 
+    final strokeWidth =
+        GameConstants.terrainStrokeWidth / GameConstants.pixelsPerMeter;
+
     for (final poly in mesh.polygons) {
+      // Always draw fill
       final fillPaint = Paint()
         ..color = poly.fillColor
         ..style = PaintingStyle.fill;
       recordCanvas.drawPath(poly.path, fillPaint);
 
-      final strokePaint = Paint()
-        ..color = poly.strokeColor
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = GameConstants.terrainStrokeWidth /
-            GameConstants.pixelsPerMeter;
-      recordCanvas.drawPath(poly.path, strokePaint);
+      // Only draw strokes on boundary polygons (where solid meets empty)
+      // Interior (case 15) polygons get no stroke to prevent grid lines
+      if (!poly.isInterior) {
+        final strokePaint = Paint()
+          ..color = poly.strokeColor
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = strokeWidth
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round;
+        recordCanvas.drawPath(poly.path, strokePaint);
+      }
     }
 
     final picture = recorder.endRecording();

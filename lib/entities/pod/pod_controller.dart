@@ -1,5 +1,4 @@
 import 'package:flame/components.dart';
-import 'package:flame/events.dart';
 import 'package:flutter/services.dart';
 
 import 'package:motherlode/entities/pod/pod.dart';
@@ -67,7 +66,7 @@ class PodController extends Component
     pod.thrustRight = false;
     pod.drillDown = false;
 
-    final viewportSize = game.size;
+    final viewportSize = game.camera.viewport.size;
     final centerX = viewportSize.x / 2;
     final centerY = viewportSize.y / 2;
 

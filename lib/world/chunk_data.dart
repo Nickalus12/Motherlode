@@ -32,8 +32,8 @@ class ChunkData {
   /// Cell types as integer indices (CellType.index)
   final List<List<int>> cellTypes;
 
-  /// Cell densities
-  final List<List<double>> cellDensities;
+  /// Cell SDF values (negative=solid, positive=air)
+  final List<List<double>> cellSdfValues;
 
   /// Ore type names (null if no ore)
   final List<List<String?>> oreNames;
@@ -47,7 +47,7 @@ class ChunkData {
 
   const ChunkData({
     required this.cellTypes,
-    required this.cellDensities,
+    required this.cellSdfValues,
     required this.oreNames,
     required this.creatureSpawns,
     required this.chunkX,
@@ -68,9 +68,9 @@ class ChunkData {
         size,
         (y) => List.generate(size, (x) => grid[y][x].type.index),
       ),
-      cellDensities: List.generate(
+      cellSdfValues: List.generate(
         size,
-        (y) => List.generate(size, (x) => grid[y][x].density),
+        (y) => List.generate(size, (x) => grid[y][x].sdf),
       ),
       oreNames: List.generate(
         size,
@@ -94,7 +94,7 @@ class ChunkData {
         final oreName = oreNames[y][x];
         return TerrainCell(
           type: CellType.values[cellTypes[y][x]],
-          density: cellDensities[y][x],
+          sdf: cellSdfValues[y][x],
           oreType: oreName != null ? OreRegistry.getByName(oreName) : null,
           hasCreatureSpawn: creatureSpawns[y][x],
         );

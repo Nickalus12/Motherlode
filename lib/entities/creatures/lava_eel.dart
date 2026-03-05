@@ -63,7 +63,7 @@ class LavaEel extends Creature {
     body.applyForce(swimForce);
 
     // Check for attack opportunity
-    final pod = game.pod;
+    final pod = motherlodeGame.pod;
     final distToPod = position.distanceTo(pod.position);
 
     if (_attackCooldown <= 0 && distToPod < 15 && distToPod > 2) {

@@ -1,13 +1,11 @@
 import 'dart:math';
 
 import 'package:flame/components.dart';
-import 'package:flame_forge2d/flame_forge2d.dart';
 
 import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/physics/collapse_detector.dart';
 import 'package:motherlode/physics/debris_body.dart';
 import 'package:motherlode/physics/explosion_system.dart';
-import 'package:motherlode/utils/constants.dart';
 
 /// Manages earthquakes, cave collapses, and explosion effects
 ///

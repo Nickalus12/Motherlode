@@ -1,6 +1,7 @@
 import 'package:flame/components.dart';
 
 import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/world/terrain_cell.dart';
 
 /// Global drilling system that manages block removal, ore collection,
 /// and resistance calculations across the world
@@ -32,8 +33,7 @@ class DrillingSystem extends Component with HasGameReference<MotherlodeGame> {
 
         if (cell.isDrillable) {
           // Collect ore if present
-          if (cell.type.index == 7 && cell.oreType != null) {
-            // CellType.ore
+          if (cell.type == CellType.ore && cell.oreType != null) {
             if (cell.oreType!.isSpecialCollectible) {
               game.addCash(cell.oreType!.value.toDouble());
             } else if (game.pod.cargoSystem.canAdd(

@@ -1,12 +1,10 @@
 import 'dart:math';
 import 'dart:ui';
 
-import 'package:flame/components.dart' hide Vector2;
 import 'package:flame_forge2d/flame_forge2d.dart';
 
 import 'package:motherlode/entities/creatures/creature.dart';
 import 'package:motherlode/entities/creatures/rock_crab.dart';
-import 'package:motherlode/entities/pod/pod.dart';
 
 /// Mr. Natas - Final boss at -7187ft, multi-phase fight
 ///
@@ -88,16 +86,16 @@ class NatasBoss extends Creature {
     _attackTimer = 0;
 
     // Screen shake on phase transition
-    game.earthquakeSystem.startShake(0.8, 2.0);
+    motherlodeGame.earthquakeSystem.startShake(0.8, 2.0);
 
     // Visual flash effect
-    game.particleSystem.emitExplosionDebris(position, 3);
+    motherlodeGame.particleSystem.emitExplosionDebris(position, 3);
   }
 
   /// Phase 1: Ground slams + Rock Crab summons
   void _phase1Behavior(double dt) {
     // Always chase the pod
-    final pod = game.pod;
+    final pod = motherlodeGame.pod;
     final direction = (pod.position - position).normalized();
     body.applyForce(direction * speed);
 
@@ -116,7 +114,7 @@ class NatasBoss extends Creature {
 
   /// Phase 2: Lava waves + faster movement
   void _phase2Behavior(double dt) {
-    final pod = game.pod;
+    final pod = motherlodeGame.pod;
     final direction = (pod.position - position).normalized();
     body.applyForce(direction * speed * 1.3); // Faster
 
@@ -135,12 +133,12 @@ class NatasBoss extends Creature {
 
   /// Phase 3: Berserker - all attacks + constant earthquake
   void _phase3Behavior(double dt) {
-    final pod = game.pod;
+    final pod = motherlodeGame.pod;
     final direction = (pod.position - position).normalized();
     body.applyForce(direction * speed * 1.6); // Even faster
 
     // Constant screen shake
-    game.earthquakeSystem.startShake(0.3, 0.5);
+    motherlodeGame.earthquakeSystem.startShake(0.3, 0.5);
 
     // Rapid ground slams
     if (_attackTimer >= _slamCooldown * 0.4) {
@@ -163,15 +161,15 @@ class NatasBoss extends Creature {
 
   void _groundSlam() {
     // Camera shake
-    game.earthquakeSystem.startShake(0.6, 1.0);
+    motherlodeGame.earthquakeSystem.startShake(0.6, 1.0);
 
     // Damage pod if nearby
-    final distToPod = position.distanceTo(game.pod.position);
+    final distToPod = position.distanceTo(motherlodeGame.pod.position);
     if (distToPod < 4) {
       final slamDamage = 15.0 * (1.0 - distToPod / 4.0);
-      game.pod.takeDamage(slamDamage);
-      game.pod.applyImpulse(
-        (game.pod.position - position).normalized() * 30,
+      motherlodeGame.pod.takeDamage(slamDamage);
+      motherlodeGame.pod.applyImpulse(
+        (motherlodeGame.pod.position - position).normalized() * 30,
       );
     }
 
@@ -181,18 +179,18 @@ class NatasBoss extends Creature {
     for (int dy = -2; dy <= 2; dy++) {
       for (int dx = -2; dx <= 2; dx++) {
         if (dx * dx + dy * dy <= 4) {
-          game.removeTerrainCell(gridX + dx, gridY + dy);
+          motherlodeGame.removeTerrainCell(gridX + dx, gridY + dy);
         }
       }
     }
 
     // Particles
-    game.particleSystem.emitExplosionDebris(position, 2);
+    motherlodeGame.particleSystem.emitExplosionDebris(position, 2);
   }
 
   void _lavaWaveAttack() {
     // Launch multiple projectiles in an arc
-    final pod = game.pod;
+    final pod = motherlodeGame.pod;
     final baseAngle = (pod.position - position).angleTo(Vector2(1, 0));
 
     for (int i = -2; i <= 2; i++) {
@@ -200,15 +198,15 @@ class NatasBoss extends Creature {
       final direction = Vector2(cos(angle), sin(angle));
 
       // Reuse lava glob projectile logic
-      game.particleSystem.emitLavaSplash(
+      motherlodeGame.particleSystem.emitLavaSplash(
         position + direction * 1.5,
       );
     }
 
     // Damage in cone
-    final distToPod = position.distanceTo(game.pod.position);
+    final distToPod = position.distanceTo(motherlodeGame.pod.position);
     if (distToPod < 8) {
-      game.pod.takeDamage(10);
+      motherlodeGame.pod.takeDamage(10);
     }
   }
 
@@ -230,13 +228,13 @@ class NatasBoss extends Creature {
   @override
   void die() {
     // Epic death sequence
-    game.earthquakeSystem.startShake(1.0, 3.0);
+    motherlodeGame.earthquakeSystem.startShake(1.0, 3.0);
 
     // Large explosion
     for (int i = 0; i < 5; i++) {
       Future.delayed(Duration(milliseconds: i * 200), () {
         if (game.isMounted) {
-          game.particleSystem.emitExplosionDebris(
+          motherlodeGame.particleSystem.emitExplosionDebris(
             position + Vector2(
               (Random().nextDouble() - 0.5) * 3,
               (Random().nextDouble() - 0.5) * 3,

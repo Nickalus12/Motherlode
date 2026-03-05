@@ -68,7 +68,7 @@ class PodBody extends BodyComponent with ContactCallbacks {
   double _calculateDensity() {
     final area = _width * _height;
     final totalMass = GameConstants.podBaseMass +
-        (game.pod.cargoSystem?.currentWeight ?? 0);
+        game.pod.cargoSystem.currentWeight;
     return totalMass / area;
   }
 

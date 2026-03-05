@@ -4,8 +4,9 @@ import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 
 import 'package:motherlode/utils/constants.dart';
-import 'package:motherlode/world/terrain_cell.dart';
 import 'package:motherlode/world/marching_squares.dart';
+import 'package:motherlode/world/stratigraphy.dart';
+import 'package:motherlode/world/terrain_cell.dart';
 
 /// A 32x32 cell chunk of terrain, loaded/unloaded based on pod depth
 class Chunk extends BodyComponent {
@@ -16,6 +17,13 @@ class Chunk extends BodyComponent {
   bool _isDirty = true;
   bool _physicsBuilt = false;
   late MarchingSquaresResult _meshResult;
+
+  /// Border data from neighboring chunks (set by ChunkManager)
+  ChunkBorderData? _borderData;
+
+  /// Stratigraphy reference for geological coloring (set by ChunkManager).
+  /// Null when using the legacy WorldGenerator (falls back to depth colors).
+  Stratigraphy? stratigraphy;
 
   /// Cached rendered picture for this chunk (null when dirty)
   ui.Picture? _cachedPicture;
@@ -56,6 +64,15 @@ class Chunk extends BodyComponent {
     _cachedPicture = picture;
   }
 
+  /// Set border data from neighboring chunks
+  void setBorderData(ChunkBorderData data) {
+    if (_borderData != data) {
+      _borderData = data;
+      // Only mark dirty if we didn't have border data before
+      // (first time neighbors provide data)
+    }
+  }
+
   /// Get cell at local chunk coordinates
   TerrainCell? getCell(int localX, int localY) {
     if (localX < 0 ||
@@ -67,6 +84,20 @@ class Chunk extends BodyComponent {
     return cells[localY][localX];
   }
 
+  /// Get the top row of cells (for neighbor border data)
+  List<TerrainCell> get topRow => cells[0];
+
+  /// Get the bottom row of cells (for neighbor border data)
+  List<TerrainCell> get bottomRow => cells[GameConstants.chunkSize - 1];
+
+  /// Get the left column of cells (for neighbor border data)
+  List<TerrainCell> get leftCol =>
+      List.generate(GameConstants.chunkSize, (y) => cells[y][0]);
+
+  /// Get the right column of cells (for neighbor border data)
+  List<TerrainCell> get rightCol => List.generate(
+      GameConstants.chunkSize, (y) => cells[y][GameConstants.chunkSize - 1]);
+
   /// Remove a cell (set to empty) and mark dirty
   void removeCell(int localX, int localY) {
     if (localX < 0 ||
@@ -76,7 +107,7 @@ class Chunk extends BodyComponent {
       return;
     }
     cells[localY][localX].type = CellType.empty;
-    cells[localY][localX].density = 0.0;
+    cells[localY][localX].sdf = 0.5; // Positive = air
     cells[localY][localX].oreType = null;
     _isDirty = true;
   }
@@ -87,8 +118,11 @@ class Chunk extends BodyComponent {
       cells: cells,
       chunkX: chunkX,
       chunkY: chunkY,
+      borders: _borderData,
+      stratigraphy: stratigraphy,
     );
     _isDirty = false;
+    _cachedPicture = null;
   }
 
   /// Get the mesh result for rendering
@@ -134,24 +168,25 @@ class Chunk extends BodyComponent {
       if (segment.length < 2) continue;
 
       // Create edge chain from segment vertices
-      final vertices = segment
-          .map((v) => Vector2(v.dx, v.dy))
-          .toList();
+      final vertices = segment.map((v) => Vector2(v.dx, v.dy)).toList();
 
       if (vertices.length == 2) {
-        final edgeShape = EdgeShape()
-          ..set(vertices[0], vertices[1]);
+        final edgeShape = EdgeShape()..set(vertices[0], vertices[1]);
         body.createFixture(FixtureDef(edgeShape)
           ..friction = 0.3
           ..restitution = 0.0);
       } else {
-        final chainShape = ChainShape()
-          ..createChain(vertices);
+        final chainShape = ChainShape()..createChain(vertices);
         body.createFixture(FixtureDef(chainShape)
           ..friction = 0.3
           ..restitution = 0.0);
       }
     }
+  }
+
+  @override
+  void render(ui.Canvas canvas) {
+    // Visual rendering handled by TerrainRenderer
   }
 
   /// Count solid cells in this chunk

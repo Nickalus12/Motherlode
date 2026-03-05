@@ -1,24 +1,35 @@
 import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 
-import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/entities/pod/pod.dart';
+import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/utils/constants.dart';
 import 'package:motherlode/world/terrain_cell.dart';
 
-/// Drilling logic: cell removal, speed calculation, material resistance
+/// Drilling logic using SDF sphere subtraction for smooth terrain removal.
 ///
 /// Pod must be grounded to drill down. Drill direction is DOWN only
-/// (faithful to original Motherload). Each drill tick removes one cell
-/// from terrain, triggers collapse check, and may collect ore.
+/// (faithful to original Motherload). When a cell is fully drilled,
+/// an SDF sphere subtraction is applied to carve a smooth round hole.
 class DrillSystem extends Component {
   final Pod pod;
   final MotherlodeGame game;
 
-  double _drillTimer = 0;
   double _currentCellProgress = 0;
   int? _targetGridX;
   int? _targetGridY;
+
+  /// Base radius of the drill carve in grid units (level 0).
+  static const double _baseRadius = 1.0;
+
+  /// Additional radius per drill upgrade level.
+  static const double _radiusPerLevel = 0.15;
+
+  /// Smoothing factor for SDF subtraction (larger = rounder edges)
+  static const double _drillSmoothing = 0.3;
+
+  /// Current drill radius, scaling with the game's drill upgrade level.
+  double get _drillRadius => _baseRadius + game.drillLevel * _radiusPerLevel;
 
   DrillSystem({required this.pod, required this.game});
 
@@ -67,42 +78,64 @@ class DrillSystem extends Component {
     game.fuelSystem.consumeFuel(GameConstants.fuelConsumptionDrill * dt);
   }
 
-  /// Remove a drilled cell and collect any ore
+  /// Remove a drilled cell using SDF sphere subtraction and collect any ore.
+  ///
+  /// Delegates terrain carving to [ChunkManager.drillAtWorld] which handles
+  /// cross-chunk SDF subtraction and dirty marking. Ore collection is
+  /// checked on the target cell before carving, and on any newly-exposed
+  /// ore cells after carving.
   void _removeCell(int gridX, int gridY, TerrainCell cell) {
-    // Collect ore if present
+    // Collect ore from the target cell before carving
     if (cell.type == CellType.ore && cell.oreType != null) {
-      final ore = cell.oreType!;
+      if (!_collectOre(gridX, gridY, cell)) return; // Cargo full
+    }
 
-      if (ore.isSpecialCollectible) {
-        // Special collectibles give immediate cash, no cargo space needed
-        game.addCash(ore.value.toDouble());
-        game.particleSystem.emitOreSparkle(
-          Vector2(gridX.toDouble(), gridY.toDouble()),
-          ore.color,
-        );
-      } else {
-        // Standard ore: add to cargo if space available
-        if (pod.cargoSystem.canAdd(ore.weight.toDouble())) {
-          pod.cargoSystem.addOre(ore);
-          game.particleSystem.emitOreSparkle(
-            Vector2(gridX.toDouble(), gridY.toDouble()),
-            ore.color,
-          );
-          // Update pod mass (heavier with cargo)
-          pod.podBody.updateMass();
-        }
-        // If no space, ore is left in ground (cell not removed)
-        else {
-          return; // Don't remove the cell
-        }
+    // Carve smooth round hole via centralized SDF drill on ChunkManager
+    final modified = game.chunkManager.drillAtWorld(
+      gridX.toDouble(),
+      gridY.toDouble(),
+      _drillRadius,
+      smoothK: _drillSmoothing,
+    );
+
+    // Collect ore from any cells that were newly cleared by the carve
+    for (final (gx, gy, modifiedCell) in modified) {
+      if (gx == gridX && gy == gridY) continue; // Already collected above
+      if (modifiedCell.type == CellType.empty &&
+          modifiedCell.oreType != null) {
+        // Cell was ore but got carved to empty — ore is lost (destroyed)
+        modifiedCell.oreType = null;
       }
     }
 
-    // Remove the terrain cell
-    game.removeTerrainCell(gridX, gridY);
-
     // Trigger collapse check in surrounding area
     game.earthquakeSystem.checkCollapse(gridX, gridY);
+  }
+
+  /// Try to collect ore from a cell. Returns false if cargo is full.
+  bool _collectOre(int gridX, int gridY, TerrainCell cell) {
+    final ore = cell.oreType!;
+
+    if (ore.isSpecialCollectible) {
+      game.addCash(ore.value.toDouble());
+      game.particleSystem.emitOreSparkle(
+        Vector2(gridX.toDouble(), gridY.toDouble()),
+        ore.color,
+      );
+      return true;
+    }
+
+    if (pod.cargoSystem.canAdd(ore.weight.toDouble())) {
+      pod.cargoSystem.addOre(ore);
+      game.particleSystem.emitOreSparkle(
+        Vector2(gridX.toDouble(), gridY.toDouble()),
+        ore.color,
+      );
+      pod.updateMass();
+      return true;
+    }
+
+    return false; // Cargo full
   }
 
   /// Get drill progress as 0.0 to 1.0

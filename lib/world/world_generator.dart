@@ -12,7 +12,39 @@ import 'package:motherlode/world/terrain_cell.dart';
 class WorldGenerator {
   final int seed;
 
+  /// Cached surface heights for consistent terrain contour
+  final Map<int, double> _surfaceHeightCache = {};
+
   WorldGenerator({required this.seed});
+
+  /// Get the surface height (in tile Y) at a given world X position.
+  /// Returns a value typically between -1 and 3 (varies with noise).
+  /// The landing pad area (|worldX| <= 5) is forced flat at y=0.
+  double getSurfaceHeight(int worldX) {
+    return _surfaceHeightCache.putIfAbsent(worldX, () {
+      // Landing pad area is flat
+      if (worldX.abs() <= 5) return 0.0;
+
+      // Smooth transition from flat landing pad to natural terrain
+      final distFromPad = (worldX.abs() - 5).clamp(0, 10) / 10.0;
+
+      final noise = NoiseUtils.sampleMultiOctave(
+        seed: seed + 7000,
+        x: worldX.toDouble(),
+        y: 0.0,
+        octaves: 3,
+        frequency: 0.025,
+        lacunarity: 2.0,
+        gain: 0.5,
+      );
+
+      // Surface varies between -1 and +3 tiles below y=0
+      // (negative = higher ground, positive = lower ground)
+      final rawHeight = -1.0 + noise * 4.0;
+      // Blend with flat pad
+      return rawHeight * distFromPad;
+    });
+  }
 
   /// Boss arena rectangle in tile coordinates (centered at x=0, at boss depth)
   static int get bossArenaMinX => -8;
@@ -48,6 +80,11 @@ class WorldGenerator {
     // Step 4: Classify cells by depth biome
     _classifyCellsByBiome(grid, worldStartX, worldStartY, size);
 
+    // Step 4b: Add micro-noise SDF variation to solid cells only.
+    // Applied after classification, so it only affects marching squares
+    // edge interpolation quality, not which cells are solid vs empty.
+    _addSdfVariation(grid, worldStartX, worldStartY, size);
+
     // Step 5: Place ore veins using drunk-walk blob generation
     _placeOreVeins(grid, worldStartX, worldStartY, size);
 
@@ -66,7 +103,8 @@ class WorldGenerator {
     return grid;
   }
 
-  /// Step 1: Generate base density map using multi-octave simplex noise
+  /// Step 1: Generate base SDF map using multi-octave simplex noise.
+  /// Produces signed distance values: negative = solid, positive = air.
   void _generateDensityMap(
     List<List<TerrainCell>> grid,
     int worldStartX,
@@ -80,7 +118,7 @@ class WorldGenerator {
         final depthFeet = worldY * GameConstants.feetPerTile;
         final biome = BiomeRegistry.getBiomeAtDepth(depthFeet);
 
-        final density = NoiseUtils.sampleMultiOctave(
+        final noiseVal = NoiseUtils.sampleMultiOctave(
           seed: seed,
           x: worldX.toDouble(),
           y: worldY.toDouble(),
@@ -100,13 +138,17 @@ class WorldGenerator {
         // Scale cave influence by biome's cave frequency
         final caveInfluence = caveNoise * biome.caveFrequency * 0.5;
 
-        // Combined density: base terrain minus cave carving
-        grid[y][x].density = (density - caveInfluence).clamp(0.0, 1.0);
+        // Combined noise value in 0-1 range
+        final combinedDensity = (noiseVal - caveInfluence).clamp(0.0, 1.0);
+
+        // Convert to SDF: threshold - density. Negative = solid.
+        grid[y][x].sdf = biome.solidThreshold - combinedDensity;
       }
     }
   }
 
-  /// Step 2: Apply solid/empty threshold based on biome at each depth
+  /// Step 2: Apply solid/empty classification based on SDF sign.
+  /// SDF < 0 = solid, SDF >= 0 = empty.
   void _applyThreshold(
     List<List<TerrainCell>> grid,
     int worldStartX,
@@ -115,11 +157,7 @@ class WorldGenerator {
   ) {
     for (int y = 0; y < size; y++) {
       for (int x = 0; x < size; x++) {
-        final worldY = worldStartY + y;
-        final depthFeet = worldY * GameConstants.feetPerTile;
-        final biome = BiomeRegistry.getBiomeAtDepth(depthFeet);
-
-        if (grid[y][x].density > biome.solidThreshold) {
+        if (grid[y][x].sdf < 0) {
           grid[y][x].type = CellType.dirt; // Will be reclassified later
         } else {
           grid[y][x].type = CellType.empty;
@@ -180,13 +218,13 @@ class WorldGenerator {
           // Solid cell with < 3 solid orthogonal neighbors -> empty
           if (solidOrtho < 3) {
             grid[y][x].type = CellType.empty;
-            grid[y][x].density = 0.0;
+            grid[y][x].sdf = 0.5; // Positive = air
           }
         } else {
           // Empty cell with > 5 solid neighbors (8-connected) -> solid
           if (solid8 > 5) {
             grid[y][x].type = CellType.dirt;
-            grid[y][x].density = 0.6;
+            grid[y][x].sdf = -0.1; // Negative = solid
           }
         }
       }
@@ -237,7 +275,7 @@ class WorldGenerator {
         if (region.length < 4) {
           for (final p in region) {
             grid[p.y][p.x].type = CellType.empty;
-            grid[p.y][p.x].density = 0.0;
+            grid[p.y][p.x].sdf = 0.5; // Positive = air
           }
         }
       }
@@ -283,12 +321,12 @@ class WorldGenerator {
           if (typeCopy[y][x] != CellType.empty) {
             if (solidNeighbors < 4) {
               grid[y][x].type = CellType.empty;
-              grid[y][x].density = 0.0;
+              grid[y][x].sdf = 0.5; // Positive = air
             }
           } else {
             if (solidNeighbors > 5) {
               grid[y][x].type = CellType.dirt;
-              grid[y][x].density = 0.6;
+              grid[y][x].sdf = -0.1; // Negative = solid
             }
           }
         }
@@ -312,6 +350,38 @@ class WorldGenerator {
         final biome = BiomeRegistry.getBiomeAtDepth(depthFeet);
 
         grid[y][x].type = biome.primaryCellType;
+      }
+    }
+  }
+
+  /// Step 4b: Add micro-noise SDF variation to solid cells only.
+  /// This creates smoother marching squares edges without changing
+  /// which cells are solid vs empty.
+  void _addSdfVariation(
+    List<List<TerrainCell>> grid,
+    int worldStartX,
+    int worldStartY,
+    int size,
+  ) {
+    for (int y = 0; y < size; y++) {
+      for (int x = 0; x < size; x++) {
+        if (grid[y][x].type == CellType.empty) continue;
+
+        final worldX = worldStartX + x;
+        final worldY = worldStartY + y;
+        final microNoise = NoiseUtils.sampleMultiOctave(
+          seed: seed + 8000,
+          x: worldX.toDouble(),
+          y: worldY.toDouble(),
+          octaves: 2,
+          frequency: 0.15,
+          gain: 0.4,
+        );
+
+        // Vary SDF for solid cells between -0.05 and -0.45
+        // (all negative = stays solid, but edge interpolation varies)
+        grid[y][x].sdf =
+            (-0.05 - microNoise * 0.4).clamp(-0.45, -0.05);
       }
     }
   }
@@ -453,7 +523,7 @@ class WorldGenerator {
           );
           if (lavaNoise > 0.78) {
             grid[y][x].type = CellType.lava;
-            grid[y][x].density = 0.0;
+            grid[y][x].sdf = 0.5; // Non-blocking: positive SDF
           }
         }
 
@@ -466,7 +536,7 @@ class WorldGenerator {
           );
           if (gasNoise > 0.82) {
             grid[y][x].type = CellType.gas;
-            grid[y][x].density = 0.0;
+            grid[y][x].sdf = 0.5; // Non-blocking: positive SDF
           }
         }
       }
@@ -507,7 +577,8 @@ class WorldGenerator {
     }
   }
 
-  /// Step 8: Keep surface zone clear for the landing pad and shops
+  /// Step 8: Keep surface zone clear for the landing pad and shops.
+  /// Uses a noise-based surface contour for natural-looking terrain.
   void _handleSurfaceZone(
     List<List<TerrainCell>> grid,
     int worldStartX,
@@ -517,25 +588,37 @@ class WorldGenerator {
     for (int y = 0; y < size; y++) {
       final worldY = worldStartY + y;
 
-      if (worldY < 0) {
-        for (int x = 0; x < size; x++) {
+      for (int x = 0; x < size; x++) {
+        final worldX = worldStartX + x;
+        final surfaceY = getSurfaceHeight(worldX);
+        final surfaceYInt = surfaceY.floor();
+
+        if (worldY < surfaceYInt - 1) {
+          // Well above surface: always empty (sky)
           grid[y][x].type = CellType.empty;
-          grid[y][x].density = 0.0;
-        }
-      } else if (worldY == 0) {
-        for (int x = 0; x < size; x++) {
-          final worldX = worldStartX + x;
-          if (worldX.abs() <= 3) {
+          grid[y][x].sdf = 0.5; // Positive = air
+        } else if (worldY == surfaceYInt - 1 || worldY == surfaceYInt) {
+          // At or just above the surface contour line
+          if (worldY.toDouble() < surfaceY) {
+            // Above the contour - empty
             grid[y][x].type = CellType.empty;
-            grid[y][x].density = 0.0;
+            grid[y][x].sdf = 0.5; // Positive = air
           } else {
+            // At the surface - solid with SDF gradient for smooth edge
+            // distBelow > 0 means further into solid -> more negative SDF
+            final distBelow = worldY.toDouble() - surfaceY;
             grid[y][x].type = CellType.sand;
-            grid[y][x].density = 0.8;
+            grid[y][x].sdf = -(distBelow * 0.3).clamp(0.0, 0.45);
           }
-        }
-      } else if (worldY * GameConstants.feetPerTile <=
-          GameConstants.sandLayerEnd) {
-        for (int x = 0; x < size; x++) {
+        } else if (worldY <= surfaceYInt + 3) {
+          // First 3 rows below surface: guaranteed solid for stability
+          grid[y][x].type = CellType.sand;
+          // SDF becomes more negative with depth
+          final depthBelow = worldY - surfaceYInt;
+          grid[y][x].sdf = -(0.1 + depthBelow * 0.1).clamp(0.1, 0.45);
+        } else if (worldY * GameConstants.feetPerTile <=
+            GameConstants.sandLayerEnd) {
+          // Sand layer - keep noise-generated terrain but classify as sand
           if (grid[y][x].type != CellType.empty) {
             grid[y][x].type = CellType.sand;
           }
@@ -566,13 +649,13 @@ class WorldGenerator {
               worldY > bossArenaMinY &&
               worldY < bossArenaMaxY) {
             grid[y][x].type = CellType.empty;
-            grid[y][x].density = 0.0;
+            grid[y][x].sdf = 0.5; // Positive = air
             grid[y][x].oreType = null;
           }
           // Arena walls: always solid obsidian
           else {
             grid[y][x].type = CellType.obsidian;
-            grid[y][x].density = 1.0;
+            grid[y][x].sdf = -0.5; // Negative = solid
             grid[y][x].oreType = null;
           }
         }
@@ -695,7 +778,7 @@ class WorldGenerator {
           final cell = chunkData[localY][localX];
           if (cell.isSolid && cell.type != CellType.ore) {
             cell.type = CellType.empty;
-            cell.density = 0.0;
+            cell.sdf = 0.5; // Positive = air
             cell.isDirty = true;
           }
         }

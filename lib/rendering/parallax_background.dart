@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flame/components.dart';
+import 'package:flutter/painting.dart';
 
 import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/utils/color_utils.dart';
@@ -46,31 +47,75 @@ class ParallaxBackground extends Component
     _initialize();
 
     final cameraPos = game.camera.viewfinder.position;
-    final viewportSize = game.size;
+    final visibleRect = game.camera.visibleWorldRect;
     final depthFeet = game.currentDepthFeet;
 
-    // Sky gradient at surface
-    if (depthFeet <= 200) {
-      _drawSkyGradient(canvas, viewportSize, depthFeet);
+    // Underground fill: dark brown/black behind terrain to prevent sky bleed
+    final groundTop = 0.0; // y=0 is surface
+    if (visibleRect.bottom > groundTop) {
+      final groundRect = Rect.fromLTRB(
+        visibleRect.left,
+        groundTop.clamp(visibleRect.top, visibleRect.bottom),
+        visibleRect.right,
+        visibleRect.bottom,
+      );
+      final groundGradient = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          const Color(0xFF3D2810), // Brown at surface
+          const Color(0xFF1A0D05), // Dark brown deeper
+          const Color(0xFF0A0505), // Near black
+        ],
+        stops: const [0.0, 0.3, 1.0],
+      );
+      canvas.drawRect(
+        groundRect,
+        Paint()..shader = groundGradient.createShader(groundRect),
+      );
+    }
+
+    // Sky gradient ONLY above ground level
+    if (visibleRect.top < groundTop) {
+      final skyRect = Rect.fromLTRB(
+        visibleRect.left,
+        visibleRect.top,
+        visibleRect.right,
+        groundTop.clamp(visibleRect.top, visibleRect.bottom),
+      );
+      final skyOpacity = (1.0 - depthFeet / 200).clamp(0.0, 1.0);
+      if (skyOpacity > 0) {
+        final gradient = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color.from(alpha: skyOpacity, red: 0.2, green: 0.45, blue: 0.75),
+            Color.from(alpha: skyOpacity, red: 0.5, green: 0.7, blue: 0.9),
+          ],
+        );
+        canvas.drawRect(
+          skyRect,
+          Paint()..shader = gradient.createShader(skyRect),
+        );
+      }
     }
 
     // Draw parallax layers (far to near)
     for (int layerIdx = 0; layerIdx < _layers.length; layerIdx++) {
-      final parallaxFactor = 0.3 + layerIdx * 0.2; // 0.3, 0.5, 0.7
-      final opacity = 0.3 + layerIdx * 0.15; // 0.3, 0.45, 0.6
+      final parallaxFactor = 0.3 + layerIdx * 0.2;
+      final opacity = 0.3 + layerIdx * 0.15;
 
-      final offsetX = cameraPos.x * parallaxFactor;
-      final offsetY = cameraPos.y * parallaxFactor;
+      final shiftX = cameraPos.x * (1 - parallaxFactor);
+      final shiftY = cameraPos.y * (1 - parallaxFactor);
 
       for (final formation in _layers[layerIdx]) {
-        final screenX = formation.x - offsetX;
-        final screenY = formation.y - offsetY;
+        final screenX = formation.x + shiftX;
+        final screenY = formation.y + shiftY;
 
-        // Skip if not visible
-        if (screenX + formation.width < -viewportSize.x / 2 ||
-            screenX - formation.width > viewportSize.x / 2 ||
-            screenY + formation.height < -viewportSize.y / 2 ||
-            screenY - formation.height > viewportSize.y / 2) {
+        if (screenX + formation.width < visibleRect.left ||
+            screenX - formation.width > visibleRect.right ||
+            screenY + formation.height < visibleRect.top ||
+            screenY - formation.height > visibleRect.bottom) {
           continue;
         }
 
@@ -82,24 +127,6 @@ class ParallaxBackground extends Component
             color.withValues(alpha: opacity));
       }
     }
-  }
-
-  void _drawSkyGradient(Canvas canvas, Vector2 size, double depthFeet) {
-    final skyOpacity = (1.0 - depthFeet / 200).clamp(0.0, 1.0);
-    if (skyOpacity <= 0) return;
-
-    final rect = Rect.fromLTWH(0, 0, size.x, size.y);
-    final gradient = LinearGradient(
-      begin: Alignment.topCenter,
-      end: Alignment.bottomCenter,
-      colors: [
-        Color.from(alpha: skyOpacity, red: 0.33, green: 0.61, blue: 0.89),
-        Color.from(alpha: skyOpacity * 0.5, red: 0.56, green: 0.80, blue: 0.93),
-      ],
-    );
-
-    final paint = Paint()..shader = gradient.createShader(rect);
-    canvas.drawRect(rect, paint);
   }
 
   void _drawFormation(

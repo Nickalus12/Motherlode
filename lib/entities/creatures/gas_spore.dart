@@ -47,7 +47,7 @@ class GasSpore extends Creature {
 
     // Check if pod is drilling nearby
     if (!_triggered) {
-      final pod = game.pod;
+      final pod = motherlodeGame.pod;
       final distToPod = position.distanceTo(pod.position);
 
       if (pod.state == PodState.drilling &&
@@ -91,19 +91,19 @@ class GasSpore extends Creature {
 
     for (int dy = -1; dy <= 1; dy++) {
       for (int dx = -1; dx <= 1; dx++) {
-        game.removeTerrainCell(gridX + dx, gridY + dy);
+        motherlodeGame.removeTerrainCell(gridX + dx, gridY + dy);
       }
     }
 
     // Explosion effects
-    game.particleSystem.emitExplosionDebris(position, 2);
-    game.earthquakeSystem.startShake(0.4, 0.5);
+    motherlodeGame.particleSystem.emitExplosionDebris(position, 2);
+    motherlodeGame.earthquakeSystem.startShake(0.4, 0.5);
 
     // Hull damage if pod is nearby
-    final distToPod = position.distanceTo(game.pod.position);
+    final distToPod = position.distanceTo(motherlodeGame.pod.position);
     if (distToPod < 4) {
       final damage = 15 * (1 - distToPod / 4);
-      game.pod.takeDamage(damage);
+      motherlodeGame.pod.takeDamage(damage);
     }
 
     // Chain reaction: trigger nearby spores
@@ -119,7 +119,7 @@ class GasSpore extends Creature {
     }
 
     // Check collapse
-    game.earthquakeSystem.checkCollapseArea(gridX, gridY, 3);
+    motherlodeGame.earthquakeSystem.checkCollapseArea(gridX, gridY, 3);
 
     // Remove
     Future.delayed(const Duration(milliseconds: 300), () {

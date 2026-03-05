@@ -2,7 +2,32 @@ import 'dart:ui';
 
 import 'package:motherlode/utils/color_utils.dart';
 import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/stratigraphy.dart';
 import 'package:motherlode/world/terrain_cell.dart';
+
+/// Border data from neighboring chunks for seamless marching squares
+class ChunkBorderData {
+  /// Bottom row of chunk above (index by x)
+  final List<TerrainCell>? topRow;
+
+  /// Top row of chunk below (index by x)
+  final List<TerrainCell>? bottomRow;
+
+  /// Right column of chunk to the left (index by y)
+  final List<TerrainCell>? leftCol;
+
+  /// Left column of chunk to the right (index by y)
+  final List<TerrainCell>? rightCol;
+
+  const ChunkBorderData({
+    this.topRow,
+    this.bottomRow,
+    this.leftCol,
+    this.rightCol,
+  });
+
+  static const empty = ChunkBorderData();
+}
 
 /// Result of marching squares mesh generation for a chunk
 class MarchingSquaresResult {
@@ -24,40 +49,84 @@ class MarchingSquaresPoly {
   final Color fillColor;
   final Color strokeColor;
 
+  /// True if this polygon is fully interior (all 4 corners solid, case 15)
+  /// Used by renderer to skip strokes on interior polygons
+  final bool isInterior;
+
   const MarchingSquaresPoly({
     required this.path,
     required this.fillColor,
     required this.strokeColor,
+    this.isInterior = false,
   });
 }
 
 /// Marching Squares implementation for smooth organic terrain rendering
 ///
-/// For each 2x2 cell group, computes a 4-bit index (0–15) based on which
-/// corners are solid. Maps each index to a polygon configuration, interpolates
-/// edge crossings using actual density values for smooth curves.
+/// For each 2x2 cell group, computes a 4-bit index (0-15) based on which
+/// corners are solid (SDF < 0). Maps each index to a polygon configuration,
+/// interpolates edge crossings using SDF values to find the zero-isosurface.
+///
+/// Supports border data from neighboring chunks for seamless edges at
+/// chunk boundaries. Each chunk processes its own interior plus the
+/// top and left boundary quads (to avoid double-processing).
 class MarchingSquares {
   MarchingSquares._();
 
-  /// Generate the mesh for an entire chunk
+  /// Generate the mesh for an entire chunk with optional neighbor border data
   static MarchingSquaresResult generateMesh({
     required List<List<TerrainCell>> cells,
     required int chunkX,
     required int chunkY,
+    ChunkBorderData? borders,
+    Stratigraphy? stratigraphy,
   }) {
     final polygons = <MarchingSquaresPoly>[];
     final collisionSegments = <List<Offset>>[];
     final size = cells.length;
 
-    // Process each 2x2 cell group
-    for (int y = 0; y < size - 1; y++) {
-      for (int x = 0; x < size - 1; x++) {
-        final result = _processSquare(
-          cells: cells,
+    // Cell accessor that handles border lookups
+    TerrainCell? cellAt(int x, int y) {
+      // Interior cells
+      if (x >= 0 && x < size && y >= 0 && y < size) return cells[y][x];
+      if (borders == null) return null;
+      // Border cells from neighbors
+      if (y == -1 && x >= 0 && x < size) return borders.topRow?[x];
+      if (y == size && x >= 0 && x < size) return borders.bottomRow?[x];
+      if (x == -1 && y >= 0 && y < size) return borders.leftCol?[y];
+      if (x == size && y >= 0 && y < size) return borders.rightCol?[y];
+      return null;
+    }
+
+    // Extended range: process top/left boundary quads when border data available
+    // Each chunk processes its top and left boundaries to avoid double-processing
+    final startX = (borders?.leftCol != null) ? -1 : 0;
+    final startY = (borders?.topRow != null) ? -1 : 0;
+    // Standard end range for interior; bottom/right boundaries are the
+    // neighbor chunk's responsibility
+    final endX = size - 2;
+    final endY = size - 2;
+
+    for (int y = startY; y <= endY; y++) {
+      for (int x = startX; x <= endX; x++) {
+        final tl = cellAt(x, y);
+        final tr = cellAt(x + 1, y);
+        final br = cellAt(x + 1, y + 1);
+        final bl = cellAt(x, y + 1);
+
+        // Skip if any cell is missing (no border data available)
+        if (tl == null || tr == null || br == null || bl == null) continue;
+
+        final result = _processSquareFromCells(
+          tl: tl,
+          tr: tr,
+          br: br,
+          bl: bl,
           x: x,
           y: y,
           chunkX: chunkX,
           chunkY: chunkY,
+          stratigraphy: stratigraphy,
         );
 
         if (result != null) {
@@ -75,20 +144,18 @@ class MarchingSquares {
     );
   }
 
-  /// Process a single 2x2 square
-  static _SquareResult? _processSquare({
-    required List<List<TerrainCell>> cells,
+  /// Process a single 2x2 square from pre-fetched cells
+  static _SquareResult? _processSquareFromCells({
+    required TerrainCell tl,
+    required TerrainCell tr,
+    required TerrainCell br,
+    required TerrainCell bl,
     required int x,
     required int y,
     required int chunkX,
     required int chunkY,
+    Stratigraphy? stratigraphy,
   }) {
-    // Get the four corners (top-left, top-right, bottom-right, bottom-left)
-    final tl = cells[y][x];
-    final tr = cells[y][x + 1];
-    final br = cells[y + 1][x + 1];
-    final bl = cells[y + 1][x];
-
     // Compute 4-bit index
     int index = 0;
     if (tl.isSolid) index |= 8; // bit 3
@@ -96,23 +163,24 @@ class MarchingSquares {
     if (br.isSolid) index |= 2; // bit 1
     if (bl.isSolid) index |= 1; // bit 0
 
-    // Case 0 (all empty) and case 15 (all solid with no visible edge)
+    // Case 0 (all empty) - nothing to draw
     if (index == 0) return null;
 
-    // Calculate world pixel position of this cell
+    // Calculate world tile position
     final worldTileX = chunkX * GameConstants.chunkSize + x;
     final worldTileY = chunkY * GameConstants.chunkSize + y;
     final px = x.toDouble();
     final py = y.toDouble();
 
-    // Edge midpoints (interpolated by density)
-    final topMid = _interpolateEdge(px, py, px + 1, py, tl.density, tr.density);
-    final rightMid =
-        _interpolateEdge(px + 1, py, px + 1, py + 1, tr.density, br.density);
-    final bottomMid =
-        _interpolateEdge(px, py + 1, px + 1, py + 1, bl.density, br.density);
+    // Edge midpoints (interpolated by SDF values)
+    final topMid =
+        _interpolateEdge(px, py, px + 1, py, tl.sdf, tr.sdf);
+    final rightMid = _interpolateEdge(
+        px + 1, py, px + 1, py + 1, tr.sdf, br.sdf);
+    final bottomMid = _interpolateEdge(
+        px, py + 1, px + 1, py + 1, bl.sdf, br.sdf);
     final leftMid =
-        _interpolateEdge(px, py, px, py + 1, tl.density, bl.density);
+        _interpolateEdge(px, py, px, py + 1, tl.sdf, bl.sdf);
 
     // Corner positions
     final tlPos = Offset(px, py);
@@ -123,6 +191,7 @@ class MarchingSquares {
     // Build polygon vertices and edge segments based on case index
     List<Offset> polyVerts;
     List<Offset> edgeVerts;
+    bool isInterior = false;
 
     switch (index) {
       case 1: // Only bottom-left solid
@@ -181,9 +250,10 @@ class MarchingSquares {
         polyVerts = [tlPos, trPos, brPos, bottomMid, leftMid];
         edgeVerts = [bottomMid, leftMid];
         break;
-      case 15: // All solid - full square
+      case 15: // All solid - full square, no visible edge
         polyVerts = [tlPos, trPos, brPos, blPos];
         edgeVerts = [];
+        isInterior = true;
         break;
       default:
         return null;
@@ -196,7 +266,6 @@ class MarchingSquares {
     final solidCells = [tl, tr, br, bl].where((c) => c.isSolid).toList();
     Color fillColor;
     if (solidCells.any((c) => c.type == CellType.ore)) {
-      // Show ore color
       final oreCell = solidCells.firstWhere(
         (c) => c.type == CellType.ore,
         orElse: () => solidCells.first,
@@ -205,20 +274,26 @@ class MarchingSquares {
     } else if (solidCells.any((c) => c.type == CellType.lava)) {
       fillColor = const Color(0xFFFF4500);
     } else {
-      fillColor = ColorUtils.getTerrainColor(depthFeet);
+      // Use stratigraphy-aware coloring when available, otherwise
+      // fall back to simple depth-based colors.
+      fillColor = ColorUtils.getStratumTerrainColor(
+        worldTileX.toDouble(),
+        depthFeet,
+        stratigraphy,
+      );
 
-      // Add slight brightness variation based on density
-      final avgDensity = solidCells.fold<double>(
-              0.0, (sum, c) => sum + c.density) /
-          solidCells.length.clamp(1, 4);
+      // Add subtle brightness variation based on SDF depth into solid
+      final avgDensity =
+          solidCells.fold<double>(0.0, (sum, c) => sum + c.density) /
+              solidCells.length.clamp(1, 4);
       fillColor = Color.lerp(
-        ColorUtils.darken(fillColor, 0.1),
-        ColorUtils.brighten(fillColor, 0.05),
+        ColorUtils.darken(fillColor, 0.15),
+        ColorUtils.brighten(fillColor, 0.08),
         avgDensity,
       )!;
     }
 
-    final strokeColor = ColorUtils.darken(fillColor, 0.2);
+    final strokeColor = ColorUtils.darken(fillColor, 0.25);
 
     // Build visual path
     final path = Path();
@@ -235,31 +310,30 @@ class MarchingSquares {
         path: path,
         fillColor: fillColor,
         strokeColor: strokeColor,
+        isInterior: isInterior,
       ),
       edgeSegment: edgeVerts,
     );
   }
 
-  /// Interpolate edge crossing position based on density values
-  /// Instead of always using the midpoint, use actual density for smooth curves
+  /// Interpolate edge crossing position based on SDF values.
+  /// The surface crossing is at SDF = 0 (the zero-isosurface).
   static Offset _interpolateEdge(
     double x1,
     double y1,
     double x2,
     double y2,
-    double density1,
-    double density2,
+    double sdf1,
+    double sdf2,
   ) {
-    // Threshold for solid/empty classification
-    const threshold = 0.52;
+    const threshold = 0.0; // SDF zero-crossing
 
-    // Calculate interpolation factor based on densities
     double t;
-    final diff = density2 - density1;
+    final diff = sdf2 - sdf1;
     if (diff.abs() < 0.001) {
       t = 0.5;
     } else {
-      t = ((threshold - density1) / diff).clamp(0.0, 1.0);
+      t = ((threshold - sdf1) / diff).clamp(0.0, 1.0);
     }
 
     return Offset(

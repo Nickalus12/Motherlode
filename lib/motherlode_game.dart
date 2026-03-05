@@ -10,13 +10,17 @@ import 'package:motherlode/entities/pod/pod_controller.dart';
 import 'package:motherlode/physics/debris_body.dart';
 import 'package:motherlode/rendering/depth_fog.dart';
 import 'package:motherlode/rendering/lighting_system.dart';
+import 'package:motherlode/rendering/parallax_background.dart';
 import 'package:motherlode/rendering/particle_system.dart';
+import 'package:motherlode/rendering/terrain_renderer.dart';
 import 'package:motherlode/systems/depth_system.dart';
 import 'package:motherlode/systems/fuel_system.dart';
 import 'package:motherlode/systems/hull_system.dart';
 import 'package:motherlode/systems/earthquake_system.dart';
 import 'package:motherlode/utils/perf_monitor.dart';
 import 'package:motherlode/world/chunk_manager.dart';
+import 'package:motherlode/world/genesis_pipeline.dart';
+import 'package:motherlode/world/stratigraphy.dart';
 import 'package:motherlode/world/world_generator.dart';
 import 'package:motherlode/utils/constants.dart';
 
@@ -25,14 +29,28 @@ class MotherlodeGame extends Forge2DGame
     with HasKeyboardHandlerComponents, TapCallbacks, DragCallbacks {
   MotherlodeGame({
     this.onGameOver,
+    this.onReady,
     this.worldSeed,
+    this.genesisResult,
+    this.stratigraphy,
+    this.onGenesisProgress,
   }) : super(
           gravity: Vector2(0, GameConstants.gravity),
           zoom: GameConstants.pixelsPerMeter,
         );
 
   final VoidCallback? onGameOver;
+  final VoidCallback? onReady;
   final int? worldSeed;
+
+  /// Pre-generated world data from GenesisPipeline (null = use legacy WorldGenerator).
+  final GenesisResult? genesisResult;
+
+  /// Stratigraphy from GenesisPipeline for geological coloring.
+  final Stratigraphy? stratigraphy;
+
+  /// Progress callback for genesis pipeline (bridges to load screen stream).
+  final GenesisProgressCallback? onGenesisProgress;
 
   // Core systems
   late final WorldGenerator worldGenerator;
@@ -48,6 +66,8 @@ class MotherlodeGame extends Forge2DGame
   late final DepthFog depthFog;
   late final DebrisManager debrisManager;
   late final PerfMonitor perfMonitor;
+  late final TerrainRenderer terrainRenderer;
+  late final ParallaxBackground parallaxBackground;
 
   // Player state
   double playerCash = GameConstants.startingCash;
@@ -77,12 +97,18 @@ class MotherlodeGame extends Forge2DGame
 
     _seed = worldSeed ?? Random().nextInt(999999);
 
-    // Initialize world generation
+    // Initialize world generation (legacy fallback always available)
     worldGenerator = WorldGenerator(seed: _seed);
     chunkManager = ChunkManager(
       worldGenerator: worldGenerator,
       game: this,
     );
+
+    // If GenesisPipeline produced pre-generated data, inject it
+    if (genesisResult != null) {
+      chunkManager.stratigraphy = stratigraphy;
+      chunkManager.preloadChunkData(genesisResult!.chunks);
+    }
 
     // Initialize systems
     depthSystem = DepthSystem();
@@ -94,13 +120,26 @@ class MotherlodeGame extends Forge2DGame
     depthFog = DepthFog();
     debrisManager = DebrisManager();
     perfMonitor = PerfMonitor();
-
-    // Create player pod
-    pod = Pod(game: this);
-    podController = PodController(pod: pod);
+    terrainRenderer = TerrainRenderer();
+    parallaxBackground = ParallaxBackground();
 
     // Add components to world
-    world.add(chunkManager);
+    world.add(parallaxBackground);
+    await world.add(chunkManager);
+    world.add(terrainRenderer);
+
+    // Force-load terrain chunks around spawn and await their bodies.
+    // If genesis data was preloaded, forceLoadAroundSpawn picks it up
+    // from the cache instead of re-generating via WorldGenerator.
+    await chunkManager.forceLoadAroundSpawn();
+
+    // Determine safe spawn position above the surface
+    final spawnY = _findSafeSpawnY();
+
+    // Create player pod at safe position
+    pod = Pod(game: this, spawnY: spawnY);
+    podController = PodController(pod: pod);
+
     await world.add(pod);
     world.add(podController);
     world.add(depthSystem);
@@ -115,9 +154,22 @@ class MotherlodeGame extends Forge2DGame
     camera.viewport.add(depthFog);
     camera.viewport.add(perfMonitor);
 
-    // Wait for pod body to be ready before camera follow
-    await pod.loaded;
+    // Wait for pod to be ready before camera follow
+    try {
+      await pod.loaded;
+    } catch (_) {
+      // Pod may still work with fallback rendering
+    }
     camera.follow(pod);
+
+    // Notify that loading is complete
+    onReady?.call();
+  }
+
+  /// Find a safe Y position to spawn the pod above the terrain surface.
+  double _findSafeSpawnY() {
+    // Landing pad is always flat at y=0, spawn well above it
+    return -5.0;
   }
 
   @override
@@ -161,8 +213,42 @@ class MotherlodeGame extends Forge2DGame
     chunkManager.removeCell(gridX, gridY);
   }
 
+  /// Mark a terrain cell as modified (SDF changed) without clearing it.
+  /// Used by SDF drill carve where the cell's SDF is already updated.
+  void removeTerrainCellSdf(int gridX, int gridY) {
+    chunkManager.markCellDirty(gridX, gridY);
+  }
+
   /// Get terrain cell type at world grid position
   int getCellType(int gridX, int gridY) {
     return chunkManager.getCellType(gridX, gridY);
+  }
+
+  // Touch input forwarding for mobile controls
+  @override
+  void onDragStart(DragStartEvent event) {
+    super.onDragStart(event);
+    if (!pod.isMounted) return;
+    podController.handleTouchDown(
+      event.pointerId,
+      event.canvasPosition,
+    );
+  }
+
+  @override
+  void onDragUpdate(DragUpdateEvent event) {
+    super.onDragUpdate(event);
+    if (!pod.isMounted) return;
+    podController.handleTouchMove(
+      event.pointerId,
+      event.canvasEndPosition,
+    );
+  }
+
+  @override
+  void onDragEnd(DragEndEvent event) {
+    super.onDragEnd(event);
+    if (!pod.isMounted) return;
+    podController.handleTouchUp(event.pointerId);
   }
 }

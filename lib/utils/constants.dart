@@ -10,7 +10,7 @@ class GameConstants {
   static const double chunkPixelSize = tileSize * chunkSize;
 
   // Physics (Forge2D uses meters, 1 meter = tileSize pixels)
-  static const double pixelsPerMeter = 10.0;
+  static const double pixelsPerMeter = 24.0;
   static const double gravity = 9.8;
   static const double podBaseMass = 500.0;
   static const double podLinearDamping = 0.8;
@@ -32,7 +32,7 @@ class GameConstants {
   static const int chunkUnloadRadius = 5;
 
   // Rendering
-  static const double podLightBaseRadius = 180.0;
+  static const double podLightBaseRadius = 400.0;
   static const double podLightPerLevel = 10.0;
   static const double maxDarknessOpacity = 0.92;
   static const double terrainStrokeWidth = 2.0;

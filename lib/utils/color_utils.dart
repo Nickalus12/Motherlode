@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/stratigraphy.dart';
 
 /// Color utility functions for depth-graded rendering
 class ColorUtils {
@@ -47,6 +48,56 @@ class ColorUtils {
       GameConstants.hellTerrainColor,
       t,
     )!;
+  }
+
+  /// Get terrain color using geological stratigraphy.
+  ///
+  /// Returns the stratum's color with subtle noise-based variation for
+  /// natural-looking geological layers. Falls back to depth-based color
+  /// if [stratigraphy] is null.
+  ///
+  /// Near stratum boundaries, blends between adjacent layer colors for
+  /// smooth visual transitions instead of hard lines.
+  static Color getStratumTerrainColor(
+    double worldX,
+    double depthFeet,
+    Stratigraphy? stratigraphy,
+  ) {
+    if (stratigraphy == null) return getTerrainColor(depthFeet);
+
+    final stratum = stratigraphy.getStratumAtPosition(worldX, depthFeet);
+    final base = stratum.primaryColor;
+
+    // Check proximity to stratum boundary for blending.
+    // Find the boundary depth at this worldX for the current stratum.
+    final boundary = stratigraphy.getStratumBoundary(stratum, worldX);
+    final distFromBoundary = depthFeet - boundary;
+    const blendZone = 30.0; // feet of transition between layers
+
+    Color layerColor;
+    if (distFromBoundary < blendZone) {
+      // Near top boundary — blend with the stratum above
+      final stratumIdx = Stratigraphy.strata.indexOf(stratum);
+      if (stratumIdx > 0) {
+        final above = Stratigraphy.strata[stratumIdx - 1];
+        final t = (distFromBoundary / blendZone).clamp(0.0, 1.0);
+        layerColor = Color.lerp(above.primaryColor, base, t)!;
+      } else {
+        layerColor = base;
+      }
+    } else {
+      layerColor = base;
+    }
+
+    // Add subtle per-cell variation using a cheap hash (no noise call
+    // needed here since this runs per-polygon during rendering).
+    // worldX and depthFeet combined give positional variation.
+    final hash = (worldX.toInt() * 17 + depthFeet.toInt() * 31) % 200;
+    final variation = (hash / 200.0 - 0.5) * 0.12; // +/- 6% brightness
+    final r = (layerColor.r + variation).clamp(0.0, 1.0);
+    final g = (layerColor.g + variation).clamp(0.0, 1.0);
+    final b = (layerColor.b + variation).clamp(0.0, 1.0);
+    return Color.from(alpha: layerColor.a, red: r, green: g, blue: b);
   }
 
   /// Get accent color for a given depth in feet
