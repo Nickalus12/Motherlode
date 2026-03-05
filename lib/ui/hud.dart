@@ -2,9 +2,9 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/data/special_items.dart';
-import 'package:hellbore/entities/pod/pod.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/data/special_items.dart';
+import 'package:motherlode/entities/pod/pod.dart';
 
 /// HUD overlay drawn as Flutter widgets on top of Flame canvas
 ///
@@ -13,7 +13,7 @@ import 'package:hellbore/entities/pod/pod.dart';
 /// TOP CENTER: Depth meter with biome label
 /// BOTTOM: Active consumable hotkeys with quantity badges
 class HudOverlay extends StatefulWidget {
-  final HellboreGame game;
+  final MotherlodeGame game;
 
   const HudOverlay({super.key, required this.game});
 
@@ -35,19 +35,33 @@ class _HudOverlayState extends State<HudOverlay>
       vsync: this,
     )..repeat(reverse: true);
 
-    // Listen for biome changes
-    widget.game.depthSystem.onBiomeChange = (newBiome) {
-      setState(() {
-        _biomeToastText =
-            'ENTERING ${widget.game.depthSystem.currentBiomeName.toUpperCase()}';
-        _biomeToastOpacity = 1.0;
-      });
-      Future.delayed(const Duration(seconds: 3), () {
+    // Listen for biome changes once game is loaded
+    _setupBiomeListener();
+  }
+
+  void _setupBiomeListener() {
+    if (widget.game.isLoaded) {
+      widget.game.depthSystem.onBiomeChange = _onBiomeChange;
+    } else {
+      widget.game.loaded.then((_) {
         if (mounted) {
-          setState(() => _biomeToastOpacity = 0);
+          widget.game.depthSystem.onBiomeChange = _onBiomeChange;
         }
       });
-    };
+    }
+  }
+
+  void _onBiomeChange(dynamic newBiome) {
+    setState(() {
+      _biomeToastText =
+          'ENTERING ${widget.game.depthSystem.currentBiomeName.toUpperCase()}';
+      _biomeToastOpacity = 1.0;
+    });
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() => _biomeToastOpacity = 0);
+      }
+    });
   }
 
   @override
@@ -58,6 +72,9 @@ class _HudOverlayState extends State<HudOverlay>
 
   @override
   Widget build(BuildContext context) {
+    if (!widget.game.isLoaded) {
+      return const SizedBox.shrink();
+    }
     return AnimatedBuilder(
       animation: _pulseController,
       builder: (context, _) {

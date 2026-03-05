@@ -3,8 +3,8 @@ import 'dart:ui';
 
 import 'package:flame_forge2d/flame_forge2d.dart';
 
-import 'package:hellbore/entities/creatures/creature.dart';
-import 'package:hellbore/entities/pod/pod.dart';
+import 'package:motherlode/entities/creatures/creature.dart';
+import 'package:motherlode/entities/pod/pod.dart';
 
 /// Rock Crab - patrols horizontal tunnels, chases pod, climbs walls
 ///
@@ -33,7 +33,7 @@ class RockCrab extends Creature {
   Shape get bodyShape {
     // Wider body shape
     return PolygonShape()
-      ..setAsBox(0.6, 0.35);
+      ..setAsBoxXY(0.6, 0.35);
   }
 
   @override

@@ -1,17 +1,16 @@
 import 'dart:math';
 
-import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/utils/constants.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/utils/constants.dart';
 
 /// Radial impulse force application for dynamite and explosives
 ///
 /// Removes terrain cells in radius, applies impulse to dynamic bodies,
 /// chains through lava (60%) and gas (150%) pockets.
 class ExplosionSystem {
-  final HellboreGame game;
+  final MotherlodeGame game;
 
   ExplosionSystem({required this.game});
 
@@ -84,7 +83,7 @@ class ExplosionSystem {
       center + Vector2.all(radius),
     );
 
-    game.world.physicsWorld.queryAABB(QueryCallback(
+    game.world.physicsWorld.queryAABB(_ExplosionQueryCallback(
       reportFixture: (fixture) {
         final body = fixture.body;
         if (body.bodyType != BodyType.dynamic) return true;
@@ -111,11 +110,13 @@ class ExplosionSystem {
     final offsetX = (random.nextDouble() - 0.5) * trauma * 2;
     final offsetY = (random.nextDouble() - 0.5) * trauma * 2;
 
-    game.camera.viewfinder.position += Vector2(offsetX, offsetY);
+    game.camera.viewfinder.position.x += offsetX;
+    game.camera.viewfinder.position.y += offsetY;
 
     // Decay back to normal over time (handled by game update)
     Future.delayed(const Duration(milliseconds: 100), () {
-      game.camera.viewfinder.position -= Vector2(offsetX, offsetY);
+      game.camera.viewfinder.position.x -= offsetX;
+      game.camera.viewfinder.position.y -= offsetY;
     });
   }
 }
@@ -133,13 +134,14 @@ class _ChainExplosion {
 }
 
 /// Forge2D query callback for AABB queries
-class QueryCallback implements QueryCallbackInterface {
-  final bool Function(Fixture fixture) reportFixture;
+class _ExplosionQueryCallback extends QueryCallback {
+  final bool Function(Fixture fixture) _reportFixture;
 
-  QueryCallback({required this.reportFixture});
+  _ExplosionQueryCallback({required bool Function(Fixture fixture) reportFixture})
+      : _reportFixture = reportFixture;
 
   @override
-  bool reportFixtureCallback(Fixture fixture) {
-    return reportFixture(fixture);
+  bool reportFixture(Fixture fixture) {
+    return _reportFixture(fixture);
   }
 }

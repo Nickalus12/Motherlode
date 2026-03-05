@@ -4,10 +4,10 @@ library;
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hellbore/data/creature_definitions.dart';
-import 'package:hellbore/utils/constants.dart';
-import 'package:hellbore/world/terrain_cell.dart';
-import 'package:hellbore/world/world_generator.dart';
+import 'package:motherlode/data/creature_definitions.dart';
+import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/terrain_cell.dart';
+import 'package:motherlode/world/world_generator.dart';
 
 /// Headless world gen visualizer — prints ASCII cross-sections of generated worlds.
 /// Run with: flutter test test/tools/world_visualizer.dart

@@ -2,9 +2,9 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hellbore/utils/constants.dart';
-import 'package:hellbore/world/terrain_cell.dart';
-import 'package:hellbore/world/world_generator.dart';
+import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/terrain_cell.dart';
+import 'package:motherlode/world/world_generator.dart';
 
 void main() {
   List<List<TerrainCell>> _makeGrid({CellType fill = CellType.rock}) {

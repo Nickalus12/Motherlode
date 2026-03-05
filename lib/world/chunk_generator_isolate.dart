@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
-import 'package:hellbore/world/chunk_data.dart';
-import 'package:hellbore/world/world_generator.dart';
+import 'package:motherlode/world/chunk_data.dart';
+import 'package:motherlode/world/world_generator.dart';
 
 /// Top-level function for compute() isolate — generates chunk data.
 /// Must be top-level (not a method) for isolate serialization.

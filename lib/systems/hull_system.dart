@@ -1,7 +1,7 @@
 import 'package:flame/components.dart';
 
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/utils/constants.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/utils/constants.dart';
 
 /// Hull damage and integrity system
 ///
@@ -12,7 +12,7 @@ import 'package:hellbore/utils/constants.dart';
 /// - Cave collapse debris
 /// - Fall damage (high velocity impact)
 class HullSystem extends Component {
-  final HellboreGame game;
+  final MotherlodeGame game;
 
   double currentHull = 0;
   double maxHull = GameConstants.baseHullHP;

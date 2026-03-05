@@ -1,6 +1,6 @@
 import 'dart:ui';
 
-import 'package:hellbore/utils/constants.dart';
+import 'package:motherlode/utils/constants.dart';
 
 /// Color utility functions for depth-graded rendering
 class ColorUtils {

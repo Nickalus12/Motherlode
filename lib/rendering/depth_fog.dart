@@ -2,15 +2,15 @@ import 'dart:ui';
 
 import 'package:flame/components.dart';
 
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/utils/color_utils.dart';
-import 'package:hellbore/utils/constants.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/utils/color_utils.dart';
+import 'package:motherlode/utils/constants.dart';
 
 /// Depth-based color grading overlay drawn between terrain and UI
 ///
 /// 1. Depth tint: Color.lerp applied as BlendMode.multiply overlay
 /// 2. Atmospheric perspective for distant cave walls
-class DepthFog extends Component with HasGameReference<HellboreGame> {
+class DepthFog extends Component with HasGameReference<MotherlodeGame> {
   @override
   int get priority => 50; // Draw above terrain, below HUD
 

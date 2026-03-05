@@ -1,4 +1,4 @@
-import 'package:hellbore/world/ore_registry.dart';
+import 'package:motherlode/world/ore_registry.dart';
 
 /// Cargo inventory and weight tracking system
 class CargoSystem {

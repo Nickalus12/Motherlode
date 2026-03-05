@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import 'package:hellbore/data/upgrade_definitions.dart';
-import 'package:hellbore/hellbore_game.dart';
+import 'package:motherlode/data/upgrade_definitions.dart';
+import 'package:motherlode/motherlode_game.dart';
 
 /// Upgrade tree panel showing all 6 upgrade categories with tiers
 class UpgradeTreePanel extends StatefulWidget {
-  final HellboreGame game;
+  final MotherlodeGame game;
 
   const UpgradeTreePanel({super.key, required this.game});
 

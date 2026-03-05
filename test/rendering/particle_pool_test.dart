@@ -2,7 +2,7 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hellbore/rendering/particle_pool.dart';
+import 'package:motherlode/rendering/particle_pool.dart';
 
 void main() {
   // 1. Pool never allocates new objects after init

@@ -1,7 +1,7 @@
 import 'dart:ui';
 
-import 'package:hellbore/utils/constants.dart';
-import 'package:hellbore/world/terrain_cell.dart';
+import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/terrain_cell.dart';
 
 /// Depth-banded biome definitions
 enum BiomeType {

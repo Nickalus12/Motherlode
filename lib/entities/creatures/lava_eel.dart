@@ -4,8 +4,8 @@ import 'dart:ui';
 import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 
-import 'package:hellbore/entities/creatures/creature.dart';
-import 'package:hellbore/entities/pod/pod.dart';
+import 'package:motherlode/entities/creatures/creature.dart';
+import 'package:motherlode/entities/pod/pod.dart';
 
 /// Lava Eel - swims in lava, surfaces to launch projectile attacks
 ///

@@ -3,11 +3,11 @@ import 'dart:ui';
 import 'package:flame/components.dart';
 import 'package:flutter/foundation.dart';
 
-import 'package:hellbore/hellbore_game.dart';
+import 'package:motherlode/motherlode_game.dart';
 
 /// Lightweight frame-time monitor — debug builds only.
 /// Tracks rolling average of frame time, chunk counts, body counts, etc.
-class PerfMonitor extends Component with HasGameReference<HellboreGame> {
+class PerfMonitor extends Component with HasGameReference<MotherlodeGame> {
   static const int sampleSize = 60; // 1 second at 60fps
   final List<double> _frameTimes = [];
 

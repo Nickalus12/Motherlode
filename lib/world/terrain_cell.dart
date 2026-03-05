@@ -1,6 +1,6 @@
 import 'dart:ui';
 
-import 'package:hellbore/data/ore_types.dart';
+import 'package:motherlode/data/ore_types.dart';
 
 /// Types of terrain cells in the world grid
 enum CellType {

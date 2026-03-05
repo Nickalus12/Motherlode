@@ -1,28 +1,29 @@
 import 'dart:math';
 
 import 'package:flame/events.dart';
-import 'package:flame_forge2d/flame_forge2d.dart';
+import 'package:flame_forge2d/flame_forge2d.dart'
+    hide ParticleSystem, ParticleType;
 import 'package:flutter/material.dart';
 
-import 'package:hellbore/entities/pod/pod.dart';
-import 'package:hellbore/entities/pod/pod_controller.dart';
-import 'package:hellbore/physics/debris_body.dart';
-import 'package:hellbore/rendering/depth_fog.dart';
-import 'package:hellbore/rendering/lighting_system.dart';
-import 'package:hellbore/rendering/particle_system.dart';
-import 'package:hellbore/systems/depth_system.dart';
-import 'package:hellbore/systems/fuel_system.dart';
-import 'package:hellbore/systems/hull_system.dart';
-import 'package:hellbore/systems/earthquake_system.dart';
-import 'package:hellbore/utils/perf_monitor.dart';
-import 'package:hellbore/world/chunk_manager.dart';
-import 'package:hellbore/world/world_generator.dart';
-import 'package:hellbore/utils/constants.dart';
+import 'package:motherlode/entities/pod/pod.dart';
+import 'package:motherlode/entities/pod/pod_controller.dart';
+import 'package:motherlode/physics/debris_body.dart';
+import 'package:motherlode/rendering/depth_fog.dart';
+import 'package:motherlode/rendering/lighting_system.dart';
+import 'package:motherlode/rendering/particle_system.dart';
+import 'package:motherlode/systems/depth_system.dart';
+import 'package:motherlode/systems/fuel_system.dart';
+import 'package:motherlode/systems/hull_system.dart';
+import 'package:motherlode/systems/earthquake_system.dart';
+import 'package:motherlode/utils/perf_monitor.dart';
+import 'package:motherlode/world/chunk_manager.dart';
+import 'package:motherlode/world/world_generator.dart';
+import 'package:motherlode/utils/constants.dart';
 
-/// Root game class for Hellbore - extends Forge2DGame for physics
-class HellboreGame extends Forge2DGame
+/// Root game class for Motherlode - extends Forge2DGame for physics
+class MotherlodeGame extends Forge2DGame
     with HasKeyboardHandlerComponents, TapCallbacks, DragCallbacks {
-  HellboreGame({
+  MotherlodeGame({
     this.onGameOver,
     this.worldSeed,
   }) : super(
@@ -88,7 +89,7 @@ class HellboreGame extends Forge2DGame
     fuelSystem = FuelSystem(game: this);
     hullSystem = HullSystem(game: this);
     earthquakeSystem = EarthquakeSystem(game: this);
-    lightingSystem = LightingSystem(game: this);
+    lightingSystem = LightingSystem();
     particleSystem = ParticleSystem();
     depthFog = DepthFog();
     debrisManager = DebrisManager();
@@ -100,7 +101,7 @@ class HellboreGame extends Forge2DGame
 
     // Add components to world
     world.add(chunkManager);
-    world.add(pod);
+    await world.add(pod);
     world.add(podController);
     world.add(depthSystem);
     world.add(fuelSystem);
@@ -114,7 +115,8 @@ class HellboreGame extends Forge2DGame
     camera.viewport.add(depthFog);
     camera.viewport.add(perfMonitor);
 
-    // Center camera on pod
+    // Wait for pod body to be ready before camera follow
+    await pod.loaded;
     camera.follow(pod);
   }
 
@@ -122,6 +124,8 @@ class HellboreGame extends Forge2DGame
   void update(double dt) {
     if (isGameOver) return;
     super.update(dt);
+
+    if (!pod.isMounted) return;
 
     // Update depth based on pod position
     depthSystem.updateDepth(pod.position.y);

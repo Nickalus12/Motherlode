@@ -1,7 +1,7 @@
 import 'package:flame_forge2d/flame_forge2d.dart';
 
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/utils/constants.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/utils/constants.dart';
 
 /// Forge2D BodyComponent for the player pod
 ///
@@ -11,7 +11,7 @@ import 'package:hellbore/utils/constants.dart';
 /// - Angular damping: 5.0 (no spinning)
 /// - Fixture: rounded rectangle shape matching pod bounds
 class PodBody extends BodyComponent with ContactCallbacks {
-  final HellboreGame game;
+  final MotherlodeGame game;
   late final double _width;
   late final double _height;
 
@@ -40,7 +40,7 @@ class PodBody extends BodyComponent with ContactCallbacks {
 
     // Create pod shape as a polygon (rounded rect approximation)
     final shape = PolygonShape()
-      ..setAsBox(_width / 2, _height / 2);
+      ..setAsBoxXY(_width / 2, _height / 2);
 
     body.createFixture(FixtureDef(shape)
       ..density = _calculateDensity()

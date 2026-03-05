@@ -3,7 +3,7 @@ import 'dart:ui';
 
 import 'package:flame/components.dart';
 
-import 'package:hellbore/entities/pod/pod.dart';
+import 'package:motherlode/entities/pod/pod.dart';
 
 /// Procedurally renders the mining pod sprite, drill arm, and engine exhaust
 ///

@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 
-import 'package:hellbore/data/special_items.dart';
-import 'package:hellbore/data/upgrade_definitions.dart';
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/ui/inventory_panel.dart';
-import 'package:hellbore/ui/upgrade_tree.dart';
+import 'package:motherlode/data/special_items.dart';
+import 'package:motherlode/data/upgrade_definitions.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/ui/inventory_panel.dart';
+import 'package:motherlode/ui/upgrade_tree.dart';
 
 /// Surface shop overlay with fuel station, mineral processor,
 /// upgrade shop, and consumables store
 class ShopOverlay extends StatefulWidget {
-  final HellboreGame game;
+  final MotherlodeGame game;
   final VoidCallback onClose;
 
   const ShopOverlay({

@@ -2,14 +2,14 @@ import 'dart:convert';
 
 import 'package:hive_flutter/hive_flutter.dart';
 
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/persistence/game_state.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/persistence/game_state.dart';
 
 /// Manages saving and loading game state using Hive
 class SaveManager {
   SaveManager._();
 
-  static const String _boxName = 'hellbore_saves';
+  static const String _boxName = 'motherlode_saves';
   static const String _currentSaveKey = 'current_save';
   static const String _autoSaveKey = 'auto_save';
 
@@ -21,7 +21,7 @@ class SaveManager {
   }
 
   /// Save current game state
-  static Future<void> saveGame(HellboreGame game, {String? slotKey}) async {
+  static Future<void> saveGame(MotherlodeGame game, {String? slotKey}) async {
     final box = _box ?? await Hive.openBox(_boxName);
 
     final state = _captureState(game);
@@ -31,7 +31,7 @@ class SaveManager {
   }
 
   /// Auto-save (called periodically or on surface return)
-  static Future<void> autoSave(HellboreGame game) async {
+  static Future<void> autoSave(MotherlodeGame game) async {
     await saveGame(game, slotKey: _autoSaveKey);
   }
 
@@ -51,7 +51,7 @@ class SaveManager {
   }
 
   /// Apply loaded state to a game instance
-  static void applyState(HellboreGame game, GameState state) {
+  static void applyState(MotherlodeGame game, GameState state) {
     // Player stats
     game.playerCash = state.cash;
     game.drillLevel = state.drillLevel;
@@ -80,7 +80,7 @@ class SaveManager {
   }
 
   /// Capture current game state
-  static GameState _captureState(HellboreGame game) {
+  static GameState _captureState(MotherlodeGame game) {
     return GameState(
       worldSeed: game.worldSeed ?? 0,
       cash: game.playerCash,

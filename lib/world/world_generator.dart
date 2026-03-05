@@ -1,11 +1,11 @@
 import 'dart:math';
 
-import 'package:hellbore/data/creature_definitions.dart';
-import 'package:hellbore/utils/constants.dart';
-import 'package:hellbore/utils/noise_utils.dart';
-import 'package:hellbore/world/biome.dart';
-import 'package:hellbore/world/ore_registry.dart';
-import 'package:hellbore/world/terrain_cell.dart';
+import 'package:motherlode/data/creature_definitions.dart';
+import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/utils/noise_utils.dart';
+import 'package:motherlode/world/biome.dart';
+import 'package:motherlode/world/ore_registry.dart';
+import 'package:motherlode/world/terrain_cell.dart';
 
 /// Generates the procedural world using multi-octave Simplex noise
 /// and cellular automata smoothing

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/entities/pod/cargo_system.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/entities/pod/cargo_system.dart';
 
 /// Ore inventory listing with sell all functionality
 class InventoryPanel extends StatefulWidget {
-  final HellboreGame game;
+  final MotherlodeGame game;
 
   const InventoryPanel({super.key, required this.game});
 

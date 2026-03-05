@@ -47,7 +47,7 @@ class LeaderboardEntry {
 class Leaderboard {
   Leaderboard._();
 
-  static const String _boxName = 'hellbore_leaderboard';
+  static const String _boxName = 'motherlode_leaderboard';
   static const String _entriesKey = 'entries';
   static const int _maxEntries = 20;
 

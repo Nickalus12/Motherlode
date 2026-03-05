@@ -1,7 +1,7 @@
 import 'package:flame/components.dart';
 
-import 'package:hellbore/utils/constants.dart';
-import 'package:hellbore/world/biome.dart';
+import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/biome.dart';
 
 /// Tracks the pod's depth, triggers biome transitions,
 /// and maintains depth records

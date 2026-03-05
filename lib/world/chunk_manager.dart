@@ -1,16 +1,16 @@
 import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/utils/constants.dart';
-import 'package:hellbore/world/chunk.dart';
-import 'package:hellbore/world/terrain_cell.dart';
-import 'package:hellbore/world/world_generator.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/chunk.dart';
+import 'package:motherlode/world/terrain_cell.dart';
+import 'package:motherlode/world/world_generator.dart';
 
 /// Manages chunk loading/unloading based on pod position
-class ChunkManager extends Component with HasGameReference<HellboreGame> {
+class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
   final WorldGenerator worldGenerator;
-  final HellboreGame _game;
+  final MotherlodeGame _game;
 
   // Active chunks keyed by "chunkX,chunkY" string
   final Map<String, Chunk> _activeChunks = {};
@@ -20,12 +20,13 @@ class ChunkManager extends Component with HasGameReference<HellboreGame> {
 
   ChunkManager({
     required this.worldGenerator,
-    required HellboreGame game,
+    required MotherlodeGame game,
   }) : _game = game;
 
   @override
   void update(double dt) {
     super.update(dt);
+    if (!_game.pod.isMounted) return;
     _updateLoadedChunks();
   }
 

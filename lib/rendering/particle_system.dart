@@ -1,12 +1,13 @@
 import 'dart:math';
 import 'dart:ui';
 
-import 'package:flame/components.dart';
-import 'package:flame_forge2d/flame_forge2d.dart';
+import 'package:flame/components.dart' hide Vector2;
+import 'package:flame_forge2d/flame_forge2d.dart'
+    hide ParticleSystem, ParticleType;
 
-import 'package:hellbore/rendering/particle_pool.dart';
-import 'package:hellbore/utils/constants.dart';
-import 'package:hellbore/utils/math_utils.dart';
+import 'package:motherlode/rendering/particle_pool.dart';
+import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/utils/math_utils.dart';
 
 /// Individual particle with position, velocity, color, lifetime
 /// Kept for dust particles which are persistent and don't use the pool
@@ -107,7 +108,7 @@ class ParticleSystem extends Component {
 
     // Render dust
     for (final d in _dustParticles) {
-      paint.color = Colors.white.withValues(alpha: d.lifeRatio * 0.08);
+      paint.color = const Color(0xFFFFFFFF).withValues(alpha: d.lifeRatio * 0.08);
       canvas.drawCircle(Offset(d.x, d.y), d.size, paint);
     }
   }
@@ -294,7 +295,7 @@ class ParticleSystem extends Component {
         y: MathUtils.randomRange(-viewHeight, viewHeight),
         vx: MathUtils.randomRange(-0.2, 0.2),
         vy: MathUtils.randomRange(-0.1, 0.1),
-        color: Colors.white,
+        color: const Color(0xFFFFFFFF),
         size: MathUtils.randomRange(0.02, 0.05),
         life: MathUtils.randomRange(5, 15),
       ));

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
-import 'package:hellbore/hellbore_game.dart';
+import 'package:motherlode/motherlode_game.dart';
 
 /// Game over screen showing depth reached, ore value, and stats
 class DeathScreen extends StatelessWidget {
-  final HellboreGame game;
+  final MotherlodeGame game;
   final VoidCallback onRetry;
   final VoidCallback onMainMenu;
 

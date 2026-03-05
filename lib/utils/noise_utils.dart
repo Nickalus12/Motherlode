@@ -29,7 +29,7 @@ class NoiseUtils {
 
     for (int i = 0; i < octaves; i++) {
       // PerlinNoise returns values in [-1, 1]
-      final sample = noise.getPerlin2(x * freq, y * freq);
+      final sample = noise.getNoise2(x * freq, y * freq);
       value += sample * amplitude;
       totalAmplitude += amplitude;
       amplitude *= gain;

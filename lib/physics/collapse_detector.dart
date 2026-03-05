@@ -1,10 +1,8 @@
-import 'dart:math';
+import 'dart:ui';
 
-import 'package:flame_forge2d/flame_forge2d.dart';
-
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/utils/constants.dart';
-import 'package:hellbore/world/terrain_cell.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/terrain_cell.dart';
 
 /// Checks structural integrity of terrain after mining operations
 ///
@@ -15,7 +13,7 @@ import 'package:hellbore/world/terrain_cell.dart';
 /// 3. Unsupported cells become DebrisBody (dynamic Forge2D bodies)
 /// 4. Sand/gravel layer (surface to 200ft) ALWAYS collapses
 class CollapseDetector {
-  final HellboreGame game;
+  final MotherlodeGame game;
 
   CollapseDetector({required this.game});
 

@@ -2,8 +2,8 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hellbore/utils/constants.dart';
-import 'package:hellbore/world/terrain_cell.dart';
+import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/terrain_cell.dart';
 
 /// Tests for chunk dirty flag / cached picture system.
 /// Since TerrainRenderer requires a running Flame game with Canvas,

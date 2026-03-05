@@ -1,10 +1,10 @@
 import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/entities/pod/pod.dart';
-import 'package:hellbore/utils/constants.dart';
-import 'package:hellbore/world/terrain_cell.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/entities/pod/pod.dart';
+import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/terrain_cell.dart';
 
 /// Drilling logic: cell removal, speed calculation, material resistance
 ///
@@ -13,7 +13,7 @@ import 'package:hellbore/world/terrain_cell.dart';
 /// from terrain, triggers collapse check, and may collect ore.
 class DrillSystem extends Component {
   final Pod pod;
-  final HellboreGame game;
+  final MotherlodeGame game;
 
   double _drillTimer = 0;
   double _currentCellProgress = 0;

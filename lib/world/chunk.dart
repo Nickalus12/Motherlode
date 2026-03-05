@@ -3,9 +3,9 @@ import 'dart:ui' as ui;
 import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 
-import 'package:hellbore/utils/constants.dart';
-import 'package:hellbore/world/terrain_cell.dart';
-import 'package:hellbore/world/marching_squares.dart';
+import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/terrain_cell.dart';
+import 'package:motherlode/world/marching_squares.dart';
 
 /// A 32x32 cell chunk of terrain, loaded/unloaded based on pod depth
 class Chunk extends BodyComponent {

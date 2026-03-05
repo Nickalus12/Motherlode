@@ -64,12 +64,12 @@ class _MainMenuState extends State<MainMenu>
 
                 // Title
                 const Text(
-                  'HELLBORE',
+                  'MOTHERLODE',
                   style: TextStyle(
                     color: Colors.amber,
-                    fontSize: 52,
+                    fontSize: 44,
                     fontWeight: FontWeight.w900,
-                    letterSpacing: 12,
+                    letterSpacing: 8,
                     shadows: [
                       Shadow(
                         color: Colors.red,

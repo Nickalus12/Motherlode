@@ -1,5 +1,5 @@
-import 'package:hellbore/world/ore_registry.dart';
-import 'package:hellbore/world/terrain_cell.dart';
+import 'package:motherlode/world/ore_registry.dart';
+import 'package:motherlode/world/terrain_cell.dart';
 
 /// Plain data object for chunk generation parameters.
 /// Can be passed to compute() isolates (no Flame/Flutter dependencies).

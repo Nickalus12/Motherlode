@@ -3,9 +3,9 @@ import 'dart:ui';
 
 import 'package:flame_forge2d/flame_forge2d.dart';
 
-import 'package:hellbore/entities/creatures/creature.dart';
-import 'package:hellbore/entities/pod/pod.dart';
-import 'package:hellbore/utils/constants.dart';
+import 'package:motherlode/entities/creatures/creature.dart';
+import 'package:motherlode/entities/pod/pod.dart';
+import 'package:motherlode/utils/constants.dart';
 
 /// Gas Spore - floating explosive organism near gas pockets
 ///

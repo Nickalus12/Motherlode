@@ -2,13 +2,13 @@ import 'dart:ui';
 
 import 'package:flame/components.dart';
 
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/utils/constants.dart';
-import 'package:hellbore/world/chunk.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/chunk.dart';
 
 /// Renders marching squares mesh per chunk with depth-graded colors.
 /// Uses viewport culling and cached Pictures for performance.
-class TerrainRenderer extends Component with HasGameReference<HellboreGame> {
+class TerrainRenderer extends Component with HasGameReference<MotherlodeGame> {
   @override
   void render(Canvas canvas) {
     // Only render chunks visible in the camera viewport

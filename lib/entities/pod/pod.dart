@@ -1,14 +1,13 @@
 import 'dart:ui';
 
-import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 
-import 'package:hellbore/entities/pod/cargo_system.dart';
-import 'package:hellbore/entities/pod/drill_system.dart';
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/physics/pod_body.dart';
-import 'package:hellbore/rendering/pod_renderer.dart';
-import 'package:hellbore/utils/constants.dart';
+import 'package:motherlode/entities/pod/cargo_system.dart';
+import 'package:motherlode/entities/pod/drill_system.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/physics/pod_body.dart';
+import 'package:motherlode/rendering/pod_renderer.dart';
+import 'package:motherlode/utils/constants.dart';
 
 /// Pod states
 enum PodState {
@@ -24,8 +23,8 @@ enum PodState {
 ///
 /// Contains the physics body, drill system, cargo system,
 /// and state machine for managing pod behavior.
-class Pod extends BodyComponent with HasGameReference<HellboreGame> {
-  final HellboreGame _game;
+class Pod extends BodyComponent {
+  final MotherlodeGame _game;
 
   // State
   PodState state = PodState.idle;
@@ -49,7 +48,7 @@ class Pod extends BodyComponent with HasGameReference<HellboreGame> {
   double maxCargo = GameConstants.baseCargoCapacity;
   double drillSpeed = GameConstants.baseDrillSpeed;
 
-  Pod({required HellboreGame game}) : _game = game;
+  Pod({required MotherlodeGame game}) : _game = game;
 
   @override
   Body createBody() {
@@ -68,7 +67,7 @@ class Pod extends BodyComponent with HasGameReference<HellboreGame> {
 
     // Pod shape
     final shape = PolygonShape()
-      ..setAsBox(0.9, 1.1);
+      ..setAsBoxXY(0.9, 1.1);
 
     body.createFixture(FixtureDef(shape)
       ..density = GameConstants.podBaseMass / (1.8 * 2.2)

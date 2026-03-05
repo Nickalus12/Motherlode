@@ -1,14 +1,14 @@
 import 'package:flame/components.dart';
 
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/utils/constants.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/utils/constants.dart';
 
 /// Fuel consumption and management system
 ///
 /// Fuel is consumed by movement (thrust) and drilling.
 /// Low fuel reduces thrust power. Running out leaves the pod stranded.
 class FuelSystem extends Component {
-  final HellboreGame game;
+  final MotherlodeGame game;
 
   double currentFuel = 0;
   double maxFuel = GameConstants.baseFuelCapacity;

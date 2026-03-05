@@ -3,18 +3,18 @@ import 'dart:math';
 import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/physics/collapse_detector.dart';
-import 'package:hellbore/physics/debris_body.dart';
-import 'package:hellbore/physics/explosion_system.dart';
-import 'package:hellbore/utils/constants.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/physics/collapse_detector.dart';
+import 'package:motherlode/physics/debris_body.dart';
+import 'package:motherlode/physics/explosion_system.dart';
+import 'package:motherlode/utils/constants.dart';
 
 /// Manages earthquakes, cave collapses, and explosion effects
 ///
 /// Random force impulses triggered at score milestones.
 /// Handles collapse detection and debris creation.
-class EarthquakeSystem extends Component with HasGameReference<HellboreGame> {
-  final HellboreGame _game;
+class EarthquakeSystem extends Component with HasGameReference<MotherlodeGame> {
+  final MotherlodeGame _game;
   late final CollapseDetector _collapseDetector;
   late final ExplosionSystem _explosionSystem;
 
@@ -28,7 +28,7 @@ class EarthquakeSystem extends Component with HasGameReference<HellboreGame> {
   double _shakeIntensity = 0;
   double _shakeDuration = 0;
 
-  EarthquakeSystem({required HellboreGame game}) : _game = game;
+  EarthquakeSystem({required MotherlodeGame game}) : _game = game;
 
   @override
   Future<void> onLoad() async {

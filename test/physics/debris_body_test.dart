@@ -2,7 +2,7 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hellbore/physics/debris_body.dart';
+import 'package:motherlode/physics/debris_body.dart';
 
 /// Tests for debris body auto-sleep and max body limit.
 /// Since DebrisBody requires Forge2D world, we test the DebrisManager

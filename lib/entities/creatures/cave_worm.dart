@@ -3,9 +3,9 @@ import 'dart:ui';
 
 import 'package:flame_forge2d/flame_forge2d.dart';
 
-import 'package:hellbore/entities/creatures/creature.dart';
-import 'package:hellbore/entities/pod/pod.dart';
-import 'package:hellbore/hellbore_game.dart';
+import 'package:motherlode/entities/creatures/creature.dart';
+import 'package:motherlode/entities/pod/pod.dart';
+import 'package:motherlode/motherlode_game.dart';
 
 /// Cave Worm - tunnels through solid terrain, creates persistent tunnels
 ///

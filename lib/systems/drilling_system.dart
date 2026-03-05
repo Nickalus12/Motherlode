@@ -1,6 +1,6 @@
 import 'package:flame/components.dart';
 
-import 'package:hellbore/hellbore_game.dart';
+import 'package:motherlode/motherlode_game.dart';
 
 /// Global drilling system that manages block removal, ore collection,
 /// and resistance calculations across the world
@@ -10,7 +10,7 @@ import 'package:hellbore/hellbore_game.dart';
 /// - Mass terrain removal (explosions)
 /// - Cascade effects
 /// - Ore value tracking
-class DrillingSystem extends Component with HasGameReference<HellboreGame> {
+class DrillingSystem extends Component with HasGameReference<MotherlodeGame> {
   /// Total ore value collected this run
   double totalOreValueCollected = 0;
 

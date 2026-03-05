@@ -3,13 +3,13 @@ import 'dart:ui';
 
 import 'package:flame/components.dart';
 
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/utils/color_utils.dart';
-import 'package:hellbore/utils/constants.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/utils/color_utils.dart';
+import 'package:motherlode/utils/constants.dart';
 
 /// Multi-layer parallax cave walls for background depth
 class ParallaxBackground extends Component
-    with HasGameReference<HellboreGame> {
+    with HasGameReference<MotherlodeGame> {
   @override
   int get priority => -10; // Draw behind terrain
 

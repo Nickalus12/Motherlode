@@ -1,6 +1,6 @@
 import 'dart:ui';
 
-/// Core game constants for Hellbore
+/// Core game constants for Motherlode
 class GameConstants {
   GameConstants._();
 

@@ -2,9 +2,10 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flame/components.dart';
+import 'package:flutter/painting.dart';
 
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/utils/constants.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/utils/constants.dart';
 
 /// Dynamic lighting system drawn as a Canvas layer OVER the terrain
 ///
@@ -14,7 +15,7 @@ import 'package:hellbore/utils/constants.dart';
 /// 4. Gas shimmer (faint green bioluminescence)
 /// 5. Creature eyes (sharp point lights)
 /// 6. Hull damage vignette
-class LightingSystem extends Component with HasGameReference<HellboreGame> {
+class LightingSystem extends Component with HasGameReference<MotherlodeGame> {
   @override
   int get priority => 80; // Draw above terrain and fog, below HUD
 
@@ -214,7 +215,7 @@ class LightingSystem extends Component with HasGameReference<HellboreGame> {
     final vignetteOpacity = (1.0 - hullRatio) * 0.6;
     final vignetteGradient = RadialGradient(
       colors: [
-        Colors.transparent,
+        const Color(0x00000000),
         Color.from(
           alpha: vignetteOpacity,
           red: 1.0,

@@ -4,10 +4,10 @@ import 'dart:ui';
 import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 
-import 'package:hellbore/entities/pod/pod.dart';
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/utils/constants.dart';
-import 'package:hellbore/utils/math_utils.dart';
+import 'package:motherlode/entities/pod/pod.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/utils/math_utils.dart';
 
 /// Creature behavior states
 enum CreatureState {
@@ -27,7 +27,7 @@ enum CreatureState {
 /// - Eye glow component (point light)
 /// - Death particle burst + cash drop
 abstract class Creature extends BodyComponent
-    with ContactCallbacks, HasGameReference<HellboreGame> {
+    with ContactCallbacks, HasGameReference<MotherlodeGame> {
   final String name;
   final double maxHealth;
   final double damage; // Damage dealt to pod per second on contact

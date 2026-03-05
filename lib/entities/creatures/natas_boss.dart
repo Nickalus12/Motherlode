@@ -1,12 +1,12 @@
 import 'dart:math';
 import 'dart:ui';
 
-import 'package:flame/components.dart';
+import 'package:flame/components.dart' hide Vector2;
 import 'package:flame_forge2d/flame_forge2d.dart';
 
-import 'package:hellbore/entities/creatures/creature.dart';
-import 'package:hellbore/entities/creatures/rock_crab.dart';
-import 'package:hellbore/entities/pod/pod.dart';
+import 'package:motherlode/entities/creatures/creature.dart';
+import 'package:motherlode/entities/creatures/rock_crab.dart';
+import 'package:motherlode/entities/pod/pod.dart';
 
 /// Mr. Natas - Final boss at -7187ft, multi-phase fight
 ///
@@ -44,7 +44,7 @@ class NatasBoss extends Creature {
 
   @override
   Shape get bodyShape {
-    return PolygonShape()..setAsBox(1.2, 1.5);
+    return PolygonShape()..setAsBoxXY(1.2, 1.5);
   }
 
   @override
@@ -168,7 +168,7 @@ class NatasBoss extends Creature {
     // Damage pod if nearby
     final distToPod = position.distanceTo(game.pod.position);
     if (distToPod < 4) {
-      final slamDamage = 15 * (1 - distToPod / 4);
+      final slamDamage = 15.0 * (1.0 - distToPod / 4.0);
       game.pod.takeDamage(slamDamage);
       game.pod.applyImpulse(
         (game.pod.position - position).normalized() * 30,

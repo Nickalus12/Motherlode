@@ -2,7 +2,7 @@ import 'dart:math';
 
 import 'package:flame/components.dart';
 
-/// Math utility functions for Hellbore
+/// Math utility functions for Motherlode
 class MathUtils {
   MathUtils._();
 

@@ -1,11 +1,11 @@
 import 'dart:ui';
 
-import 'package:flame/components.dart';
+import 'package:flame/components.dart' hide Vector2;
 import 'package:flame_forge2d/flame_forge2d.dart';
 
-import 'package:hellbore/entities/pod/pod.dart';
-import 'package:hellbore/hellbore_game.dart';
-import 'package:hellbore/utils/constants.dart';
+import 'package:motherlode/entities/pod/pod.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/utils/constants.dart';
 
 /// Dynamic falling dirt/rock body created from collapsed terrain
 ///
@@ -47,7 +47,7 @@ class DebrisBody extends BodyComponent with ContactCallbacks {
     final body = world.createBody(bodyDef);
 
     // Debris shape - small square
-    final shape = PolygonShape()..setAsBox(0.3, 0.3);
+    final shape = PolygonShape()..setAsBoxXY(0.3, 0.3);
 
     body.createFixture(FixtureDef(shape)
       ..density = mass / (0.6 * 0.6)
@@ -134,7 +134,7 @@ class DebrisBody extends BodyComponent with ContactCallbacks {
 
 /// Manages active debris bodies, enforcing max count and providing
 /// the terrain conversion callback.
-class DebrisManager extends Component with HasGameReference<HellboreGame> {
+class DebrisManager extends Component with HasGameReference<MotherlodeGame> {
   static const int maxDebris = 150;
   static const int forceSettleCount = 20;
 

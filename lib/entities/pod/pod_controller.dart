@@ -2,8 +2,9 @@ import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flutter/services.dart';
 
-import 'package:hellbore/entities/pod/pod.dart';
-import 'package:hellbore/hellbore_game.dart';
+import 'package:motherlode/entities/pod/pod.dart';
+import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/utils/constants.dart';
 
 /// Touch/keyboard input → thrust/drill commands
 ///
@@ -12,7 +13,7 @@ import 'package:hellbore/hellbore_game.dart';
 ///   top half for thrust, bottom half for drill)
 /// - Keyboard: Arrow keys or WASD
 class PodController extends Component
-    with KeyboardHandler, HasGameReference<HellboreGame> {
+    with KeyboardHandler, HasGameReference<MotherlodeGame> {
   final Pod pod;
 
   // Touch zones (relative to viewport)
