@@ -76,8 +76,8 @@ class BiomeRegistry {
     primaryColor: GameConstants.surfaceTerrainColor,
     accentColor: GameConstants.surfaceAccentColor,
     ambientLight: GameConstants.surfaceAmbientLight,
-    solidThreshold: 0.48, // Lower threshold = more solid, easier to traverse
-    caveFrequency: 0.3,
+    solidThreshold: 0.42, // Low threshold = ~50% empty, wide open caves
+    caveFrequency: 0.55,
     primaryCellType: CellType.dirt,
     collapseResistance: 0.2, // Low - easy collapse
   );
@@ -90,7 +90,7 @@ class BiomeRegistry {
     primaryColor: GameConstants.shallowTerrainColor,
     accentColor: GameConstants.shallowAccentColor,
     ambientLight: GameConstants.shallowAmbientLight,
-    solidThreshold: 0.55, // Higher threshold = more solid, more ore veins
+    solidThreshold: 0.52, // Mid threshold = ~40% empty, winding passages
     caveFrequency: 0.4,
     primaryCellType: CellType.rock,
     hasGas: true,
@@ -105,8 +105,8 @@ class BiomeRegistry {
     primaryColor: GameConstants.volcanicTerrainColor,
     accentColor: GameConstants.volcanicAccentColor,
     ambientLight: GameConstants.volcanicAmbientLight,
-    solidThreshold: 0.52,
-    caveFrequency: 0.5,
+    solidThreshold: 0.58, // Higher threshold = ~30% empty, tight passages
+    caveFrequency: 0.3,
     primaryCellType: CellType.rock,
     hasLava: true,
     hasGas: true,
@@ -121,7 +121,7 @@ class BiomeRegistry {
     primaryColor: GameConstants.hellTerrainColor,
     accentColor: GameConstants.hellAccentColor,
     ambientLight: GameConstants.hellAmbientLight,
-    solidThreshold: 0.50,
+    solidThreshold: 0.46, // Opens back up = ~35% empty, vast Hell chambers
     caveFrequency: 0.6,
     primaryCellType: CellType.obsidian,
     hasLava: true,
