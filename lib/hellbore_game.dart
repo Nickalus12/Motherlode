@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 
 import 'package:hellbore/entities/pod/pod.dart';
 import 'package:hellbore/entities/pod/pod_controller.dart';
-import 'package:hellbore/physics/pod_body.dart';
+import 'package:hellbore/physics/debris_body.dart';
 import 'package:hellbore/rendering/depth_fog.dart';
 import 'package:hellbore/rendering/lighting_system.dart';
 import 'package:hellbore/rendering/particle_system.dart';
@@ -14,6 +14,7 @@ import 'package:hellbore/systems/depth_system.dart';
 import 'package:hellbore/systems/fuel_system.dart';
 import 'package:hellbore/systems/hull_system.dart';
 import 'package:hellbore/systems/earthquake_system.dart';
+import 'package:hellbore/utils/perf_monitor.dart';
 import 'package:hellbore/world/chunk_manager.dart';
 import 'package:hellbore/world/world_generator.dart';
 import 'package:hellbore/utils/constants.dart';
@@ -44,6 +45,8 @@ class HellboreGame extends Forge2DGame
   late final LightingSystem lightingSystem;
   late final ParticleSystem particleSystem;
   late final DepthFog depthFog;
+  late final DebrisManager debrisManager;
+  late final PerfMonitor perfMonitor;
 
   // Player state
   double playerCash = GameConstants.startingCash;
@@ -88,6 +91,8 @@ class HellboreGame extends Forge2DGame
     lightingSystem = LightingSystem(game: this);
     particleSystem = ParticleSystem();
     depthFog = DepthFog();
+    debrisManager = DebrisManager();
+    perfMonitor = PerfMonitor();
 
     // Create player pod
     pod = Pod(game: this);
@@ -102,10 +107,12 @@ class HellboreGame extends Forge2DGame
     world.add(hullSystem);
     world.add(earthquakeSystem);
     world.add(particleSystem);
+    world.add(debrisManager);
 
     // Add render overlays (camera-relative)
     camera.viewport.add(lightingSystem);
     camera.viewport.add(depthFog);
+    camera.viewport.add(perfMonitor);
 
     // Center camera on pod
     camera.follow(pod);

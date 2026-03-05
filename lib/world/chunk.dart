@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 
@@ -14,6 +16,9 @@ class Chunk extends BodyComponent {
   bool _isDirty = true;
   bool _physicsBuilt = false;
   late MarchingSquaresResult _meshResult;
+
+  /// Cached rendered picture for this chunk (null when dirty)
+  ui.Picture? _cachedPicture;
 
   Chunk({
     required this.chunkX,
@@ -36,9 +41,19 @@ class Chunk extends BodyComponent {
   /// Whether this chunk needs a visual/physics rebuild
   bool get isDirty => _isDirty;
 
+  /// Cached picture for skip-rendering clean chunks
+  ui.Picture? get cachedPicture => _cachedPicture;
+
   /// Mark chunk for rebuild (after cell removal, etc.)
   void markDirty() {
     _isDirty = true;
+    _cachedPicture = null;
+  }
+
+  /// Mark chunk as clean with a cached picture
+  void markClean(ui.Picture picture) {
+    _isDirty = false;
+    _cachedPicture = picture;
   }
 
   /// Get cell at local chunk coordinates

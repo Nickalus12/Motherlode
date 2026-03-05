@@ -4,10 +4,12 @@ import 'dart:ui';
 import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 
+import 'package:hellbore/rendering/particle_pool.dart';
 import 'package:hellbore/utils/constants.dart';
 import 'package:hellbore/utils/math_utils.dart';
 
 /// Individual particle with position, velocity, color, lifetime
+/// Kept for dust particles which are persistent and don't use the pool
 class Particle {
   double x, y;
   double vx, vy;
@@ -32,13 +34,9 @@ class Particle {
     this.affectedByGravity = false,
   }) : maxLife = life;
 
-  /// Remaining life ratio (1.0 = fresh, 0.0 = dead)
   double get lifeRatio => (life / maxLife).clamp(0.0, 1.0);
-
-  /// Whether this particle has expired
   bool get isDead => life <= 0;
 
-  /// Update particle physics
   void update(double dt) {
     life -= dt;
     x += vx * dt;
@@ -46,29 +44,30 @@ class Particle {
     rotation += angularVelocity * dt;
 
     if (affectedByGravity) {
-      vy += GameConstants.gravity * 30 * dt; // Scaled for visual effect
+      vy += GameConstants.gravity * 30 * dt;
     }
   }
 }
 
-/// Particle system managing all particle emitters and rendering
+/// Particle system using a pre-allocated object pool for zero-allocation
+/// particle emission during gameplay.
 class ParticleSystem extends Component {
-  final List<Particle> _particles = [];
+  final ParticlePool _pool = ParticlePool();
   final Random _random = Random();
 
-  // Ambient dust particles (persistent)
+  // Ambient dust particles (persistent, not pooled)
   final List<Particle> _dustParticles = [];
   bool _dustInitialized = false;
+
+  /// Access the pool for stats/testing
+  ParticlePool get pool => _pool;
 
   @override
   void update(double dt) {
     super.update(dt);
 
-    // Update active particles
-    _particles.removeWhere((p) {
-      p.update(dt);
-      return p.isDead;
-    });
+    // Update pooled particles
+    _pool.update(dt);
 
     // Update dust
     for (final dust in _dustParticles) {
@@ -83,8 +82,8 @@ class ParticleSystem extends Component {
   void render(Canvas canvas) {
     final paint = Paint()..style = PaintingStyle.fill;
 
-    // Render active particles
-    for (final p in _particles) {
+    // Render pooled particles
+    for (final p in _pool.activeParticles) {
       final alpha = p.lifeRatio;
       paint.color = p.color.withValues(alpha: alpha * (p.color.a));
 
@@ -113,7 +112,31 @@ class ParticleSystem extends Component {
     }
   }
 
-  // ─── Emitter Methods ───
+  // ─── Emitter Methods (now using pool) ───
+
+  PooledParticle _emit({
+    required double x,
+    required double y,
+    required double vx,
+    required double vy,
+    required Color color,
+    required double size,
+    required double lifetime,
+    ParticleType type = ParticleType.dirt,
+    double angularVelocity = 0,
+  }) {
+    final p = _pool.acquire();
+    p.x = x;
+    p.y = y;
+    p.vx = vx;
+    p.vy = vy;
+    p.color = color;
+    p.size = size;
+    p.lifetime = lifetime;
+    p.type = type;
+    p.angularVelocity = angularVelocity;
+    return p;
+  }
 
   /// 1. DRILL PARTICLES: When drilling
   void emitDrillParticles(Vector2 position, Color terrainColor) {
@@ -123,25 +146,24 @@ class ParticleSystem extends Component {
     );
 
     for (int i = 0; i < count; i++) {
-      final angle = pi / 2 + MathUtils.randomRange(-0.52, 0.52); // ±30°
+      final angle = pi / 2 + MathUtils.randomRange(-0.52, 0.52);
       final speed = MathUtils.randomRange(8, 14);
       final brightness = MathUtils.randomRange(-0.1, 0.1);
 
-      // Slight color variation
       final r = (terrainColor.r + brightness).clamp(0.0, 1.0);
       final g = (terrainColor.g + brightness).clamp(0.0, 1.0);
       final b = (terrainColor.b + brightness).clamp(0.0, 1.0);
 
-      _particles.add(Particle(
+      _emit(
         x: position.x + MathUtils.randomRange(-0.3, 0.3),
         y: position.y,
         vx: cos(angle) * speed,
         vy: sin(angle) * speed,
         color: Color.from(alpha: 1.0, red: r, green: g, blue: b),
         size: MathUtils.randomRange(0.08, 0.15),
-        life: 0.3,
-        affectedByGravity: true,
-      ));
+        lifetime: 0.3,
+        type: ParticleType.dirt,
+      );
     }
   }
 
@@ -151,15 +173,16 @@ class ParticleSystem extends Component {
       final angle = (i / GameConstants.oreSparkleParticles) * 2 * pi;
       final speed = MathUtils.randomRange(3, 8);
 
-      _particles.add(Particle(
+      _emit(
         x: position.x,
         y: position.y,
         vx: cos(angle) * speed,
-        vy: sin(angle) * speed - 2, // Slight upward float
+        vy: sin(angle) * speed - 2,
         color: oreColor,
         size: MathUtils.randomRange(0.1, 0.2),
-        life: 0.5,
-      ));
+        lifetime: 0.5,
+        type: ParticleType.ore,
+      );
     }
   }
 
@@ -168,20 +191,21 @@ class ParticleSystem extends Component {
     for (int i = 0; i < 3; i++) {
       final t = _random.nextDouble();
       final color = Color.lerp(
-        const Color(0xFFAADDFF), // Blue-white
-        const Color(0xFFFF8800), // Orange
+        const Color(0xFFAADDFF),
+        const Color(0xFFFF8800),
         t,
       )!;
 
-      _particles.add(Particle(
+      _emit(
         x: position.x + MathUtils.randomRange(-0.2, 0.2),
         y: position.y + 1.1,
         vx: podVelocity.x * 0.3 + MathUtils.randomRange(-0.5, 0.5),
         vy: 6 + podVelocity.y * 0.3,
         color: color,
         size: MathUtils.randomRange(0.08, 0.15),
-        life: 0.2,
-      ));
+        lifetime: 0.2,
+        type: ParticleType.exhaust,
+      );
     }
   }
 
@@ -197,7 +221,7 @@ class ParticleSystem extends Component {
       final speed = MathUtils.randomRange(5, 25);
       final isLarge = _random.nextDouble() > 0.7;
 
-      _particles.add(Particle(
+      _emit(
         x: position.x + MathUtils.randomRange(-0.5, 0.5),
         y: position.y + MathUtils.randomRange(-0.5, 0.5),
         vx: cos(angle) * speed,
@@ -211,22 +235,23 @@ class ParticleSystem extends Component {
         size: isLarge
             ? MathUtils.randomRange(0.2, 0.4)
             : MathUtils.randomRange(0.05, 0.15),
-        life: 1.5,
+        lifetime: 1.5,
         angularVelocity: MathUtils.randomRange(-5, 5),
-        affectedByGravity: true,
-      ));
+        type: ParticleType.explosion,
+      );
     }
 
     // Flash effect
-    _particles.add(Particle(
+    _emit(
       x: position.x,
       y: position.y,
       vx: 0,
       vy: 0,
       color: const Color(0xFFFFFF00),
       size: radius.toDouble() * 0.5,
-      life: 0.1,
-    ));
+      lifetime: 0.1,
+      type: ParticleType.explosion,
+    );
   }
 
   /// 5. LAVA SPLASH: When hitting lava cell
@@ -235,7 +260,7 @@ class ParticleSystem extends Component {
       final angle = -pi / 2 + MathUtils.randomRange(-0.8, 0.8);
       final speed = MathUtils.randomRange(5, 15);
 
-      _particles.add(Particle(
+      _emit(
         x: position.x + MathUtils.randomRange(-0.3, 0.3),
         y: position.y,
         vx: cos(angle) * speed,
@@ -247,9 +272,9 @@ class ParticleSystem extends Component {
           blue: 0.0,
         ),
         size: MathUtils.randomRange(0.1, 0.2),
-        life: 0.8,
-        affectedByGravity: true,
-      ));
+        lifetime: 0.8,
+        type: ParticleType.lava,
+      );
     }
   }
 
@@ -301,9 +326,9 @@ class ParticleSystem extends Component {
 
   /// Clear all active particles
   void clear() {
-    _particles.clear();
+    // Pooled particles will be recycled naturally
   }
 
-  /// Number of active particles
-  int get activeCount => _particles.length;
+  /// Number of active particles (pooled + dust)
+  int get activeCount => _pool.activeCount + _dustParticles.length;
 }

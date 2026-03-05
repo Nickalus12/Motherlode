@@ -212,5 +212,17 @@ class ChunkManager extends Component with HasGameReference<HellboreGame> {
     return _activeChunks[_chunkKey(chunkX, chunkY)];
   }
 
+  /// Alias for viewport culling — get an already-loaded chunk
+  Chunk? getLoadedChunk(int chunkX, int chunkY) {
+    return _activeChunks[_chunkKey(chunkX, chunkY)];
+  }
+
+  /// Number of currently loaded chunks
+  int get loadedChunkCount => _activeChunks.length;
+
+  /// Number of dirty chunks needing rebuild
+  int get dirtyChunkCount =>
+      _activeChunks.values.where((c) => c.isDirty).length;
+
   String _chunkKey(int cx, int cy) => '$cx,$cy';
 }
