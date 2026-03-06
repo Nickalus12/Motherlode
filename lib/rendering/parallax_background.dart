@@ -39,6 +39,10 @@ class ParallaxBackground extends Component
 
   static const double _sunWorldY = -25.0;
 
+  // Pre-allocated Paint objects to avoid per-frame GC pressure
+  final _fillPaint = Paint()..style = PaintingStyle.fill;
+  final _gradientPaint = Paint();
+
   void _initialize() {
     if (_initialized) return;
     _initialized = true;
@@ -289,8 +293,7 @@ class ParallaxBackground extends Component
 
     // --- SKY SYSTEM (above ground only) ---
     if (visibleRect.top < groundTop) {
-      final skyBottom =
-          groundTop.clamp(visibleRect.top, visibleRect.bottom);
+      final skyBottom = groundTop.clamp(visibleRect.top, visibleRect.bottom);
       final skyRect = Rect.fromLTRB(
         visibleRect.left,
         visibleRect.top,
@@ -340,16 +343,13 @@ class ParallaxBackground extends Component
     // Volcanic zone subtle pulse
     if (centerDepthFeet > GameConstants.rockEnd &&
         centerDepthFeet <= GameConstants.hellStart) {
-      final volcanicT =
-          ((centerDepthFeet - GameConstants.rockEnd) /
-                  (GameConstants.hellStart - GameConstants.rockEnd))
-              .clamp(0.0, 1.0);
+      final volcanicT = ((centerDepthFeet - GameConstants.rockEnd) /
+              (GameConstants.hellStart - GameConstants.rockEnd))
+          .clamp(0.0, 1.0);
       final pulse = 0.5 + 0.5 * sin(_time * 0.5 + 1.5);
       final pulseAmount = volcanicT * pulse * 0.08;
-      topColor =
-          Color.lerp(topColor, const Color(0xFF3A1000), pulseAmount)!;
-      botColor =
-          Color.lerp(botColor, const Color(0xFF2A0800), pulseAmount)!;
+      topColor = Color.lerp(topColor, const Color(0xFF3A1000), pulseAmount)!;
+      botColor = Color.lerp(botColor, const Color(0xFF2A0800), pulseAmount)!;
     }
 
     final gradient = LinearGradient(
@@ -357,10 +357,8 @@ class ParallaxBackground extends Component
       end: Alignment.bottomCenter,
       colors: [topColor, botColor],
     );
-    canvas.drawRect(
-      ugRect,
-      Paint()..shader = gradient.createShader(ugRect),
-    );
+    _gradientPaint.shader = gradient.createShader(ugRect);
+    canvas.drawRect(ugRect, _gradientPaint);
   }
 
   Color _getBiomeBackgroundColor(double depthFeet) {
@@ -452,7 +450,7 @@ class ParallaxBackground extends Component
     Rect visibleRect,
     Vector2 cameraPos,
   ) {
-    final paint = Paint()..style = PaintingStyle.fill;
+    final paint = _fillPaint;
     int rendered = 0;
 
     for (final stal in _stalactites) {
@@ -507,7 +505,7 @@ class ParallaxBackground extends Component
   }
 
   void _renderCrystals(Canvas canvas, Rect visibleRect, Vector2 cameraPos) {
-    final paint = Paint()..style = PaintingStyle.fill;
+    final paint = _fillPaint;
     int rendered = 0;
 
     for (final crystal in _crystals) {
@@ -559,8 +557,7 @@ class ParallaxBackground extends Component
       // Glow halo
       if (twinkle > 0.4) {
         paint.color = crystal.color.withValues(alpha: alpha * 0.15);
-        canvas.drawCircle(
-            Offset(screenX, screenY), crystal.size * 4.0, paint);
+        canvas.drawCircle(Offset(screenX, screenY), crystal.size * 4.0, paint);
       }
 
       rendered++;
@@ -568,7 +565,7 @@ class ParallaxBackground extends Component
   }
 
   void _renderLavaGlow(Canvas canvas, Rect visibleRect, Vector2 cameraPos) {
-    final paint = Paint()..style = PaintingStyle.fill;
+    final paint = _fillPaint;
 
     for (final glow in _lavaGlows) {
       final screenX = glow.x + cameraPos.x * 0.15;
@@ -629,7 +626,7 @@ class ParallaxBackground extends Component
     Rect visibleRect,
     Vector2 cameraPos,
   ) {
-    final paint = Paint()..style = PaintingStyle.fill;
+    final paint = _fillPaint;
     int rendered = 0;
 
     for (final ember in _embers) {
@@ -681,7 +678,7 @@ class ParallaxBackground extends Component
     Rect visibleRect,
     Vector2 cameraPos,
   ) {
-    final paint = Paint()..style = PaintingStyle.fill;
+    final paint = _fillPaint;
     int rendered = 0;
 
     for (final drip in _drips) {
@@ -761,7 +758,7 @@ class ParallaxBackground extends Component
     Rect visibleRect,
     Vector2 cameraPos,
   ) {
-    final paint = Paint()..style = PaintingStyle.fill;
+    final paint = _fillPaint;
     int rendered = 0;
 
     for (final wisp in _fogWisps) {
@@ -828,15 +825,13 @@ class ParallaxBackground extends Component
       ],
       stops: const [0.0, 0.15, 0.3, 0.55, 0.85, 1.0],
     );
-    canvas.drawRect(
-      skyRect,
-      Paint()..shader = gradient.createShader(skyRect),
-    );
+    _gradientPaint.shader = gradient.createShader(skyRect);
+    canvas.drawRect(skyRect, _gradientPaint);
   }
 
   void _renderStars(
       Canvas canvas, Rect visibleRect, Vector2 cameraPos, double opacity) {
-    final starPaint = Paint()..style = PaintingStyle.fill;
+    final starPaint = _fillPaint;
 
     for (final star in _stars) {
       final sx = star.x + cameraPos.x * 0.02;
@@ -854,8 +849,7 @@ class ParallaxBackground extends Component
               .clamp(0.0, 1.0);
       final fade = (1.0 - horizonFade * 1.5).clamp(0.0, 1.0);
 
-      final twinkle =
-          0.6 + 0.4 * sin(_time * star.twinkleSpeed + star.x * 10);
+      final twinkle = 0.6 + 0.4 * sin(_time * star.twinkleSpeed + star.x * 10);
 
       final alpha =
           (star.brightness * fade * twinkle * opacity).clamp(0.0, 1.0);
@@ -881,42 +875,38 @@ class ParallaxBackground extends Component
 
     // Outer atmospheric glow
     const outerGlowRadius = 8.0;
-    final outerPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          Color.from(
-              alpha: 0.15 * opacity, red: 1.0, green: 0.9, blue: 0.5),
-          const Color.from(alpha: 0.0, red: 1.0, green: 0.8, blue: 0.3),
-        ],
-      ).createShader(Rect.fromCircle(
-          center: Offset(sunX, sunY), radius: outerGlowRadius));
-    canvas.drawCircle(Offset(sunX, sunY), outerGlowRadius, outerPaint);
+    _gradientPaint.shader = RadialGradient(
+      colors: [
+        Color.from(alpha: 0.15 * opacity, red: 1.0, green: 0.9, blue: 0.5),
+        const Color.from(alpha: 0.0, red: 1.0, green: 0.8, blue: 0.3),
+      ],
+    ).createShader(
+        Rect.fromCircle(center: Offset(sunX, sunY), radius: outerGlowRadius));
+    canvas.drawCircle(Offset(sunX, sunY), outerGlowRadius, _gradientPaint);
 
     // Main glow
     const glowRadius = 4.0;
-    final glowPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          Color.from(alpha: 0.7 * opacity, red: 1.0, green: 0.95, blue: 0.7),
-          Color.from(alpha: 0.2 * opacity, red: 1.0, green: 0.85, blue: 0.5),
-          const Color.from(alpha: 0.0, red: 1.0, green: 0.8, blue: 0.4),
-        ],
-        stops: const [0.0, 0.4, 1.0],
-      ).createShader(Rect.fromCircle(
-          center: Offset(sunX, sunY), radius: glowRadius));
-    canvas.drawCircle(Offset(sunX, sunY), glowRadius, glowPaint);
+    _gradientPaint.shader = RadialGradient(
+      colors: [
+        Color.from(alpha: 0.7 * opacity, red: 1.0, green: 0.95, blue: 0.7),
+        Color.from(alpha: 0.2 * opacity, red: 1.0, green: 0.85, blue: 0.5),
+        const Color.from(alpha: 0.0, red: 1.0, green: 0.8, blue: 0.4),
+      ],
+      stops: const [0.0, 0.4, 1.0],
+    ).createShader(
+        Rect.fromCircle(center: Offset(sunX, sunY), radius: glowRadius));
+    canvas.drawCircle(Offset(sunX, sunY), glowRadius, _gradientPaint);
 
     // Sun disc
     const sunRadius = 1.2;
-    final sunPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          Color.from(alpha: opacity, red: 1.0, green: 0.98, blue: 0.9),
-          Color.from(alpha: opacity, red: 1.0, green: 0.92, blue: 0.65),
-        ],
-      ).createShader(Rect.fromCircle(
-          center: Offset(sunX, sunY), radius: sunRadius));
-    canvas.drawCircle(Offset(sunX, sunY), sunRadius, sunPaint);
+    _gradientPaint.shader = RadialGradient(
+      colors: [
+        Color.from(alpha: opacity, red: 1.0, green: 0.98, blue: 0.9),
+        Color.from(alpha: opacity, red: 1.0, green: 0.92, blue: 0.65),
+      ],
+    ).createShader(
+        Rect.fromCircle(center: Offset(sunX, sunY), radius: sunRadius));
+    canvas.drawCircle(Offset(sunX, sunY), sunRadius, _gradientPaint);
   }
 
   void _renderMountains(
@@ -946,13 +936,14 @@ class ParallaxBackground extends Component
       path.lineTo(lastX, 0.0);
       path.close();
 
-      canvas.drawPath(path, Paint()..color = colors[i]);
+      _fillPaint.color = colors[i];
+      canvas.drawPath(path, _fillPaint);
     }
   }
 
   void _renderClouds(
       Canvas canvas, Rect visibleRect, Vector2 cameraPos, double opacity) {
-    final cloudPaint = Paint()..style = PaintingStyle.fill;
+    final cloudPaint = _fillPaint;
 
     for (int layerIdx = 0; layerIdx < _cloudLayers.length; layerIdx++) {
       final pf = 0.1 + layerIdx * 0.15;
@@ -1002,8 +993,8 @@ class ParallaxBackground extends Component
     }
 
     // Draw shadow layer (underneath, offset down)
-    paint.color = Color.from(
-        alpha: cloudAlpha * 0.15, red: 0.5, green: 0.5, blue: 0.6);
+    paint.color =
+        Color.from(alpha: cloudAlpha * 0.15, red: 0.5, green: 0.5, blue: 0.6);
     for (final bump in bumps) {
       final shadowPath = Path();
       shadowPath.addOval(Rect.fromCenter(
@@ -1021,8 +1012,10 @@ class ParallaxBackground extends Component
     // Build the bumpy top outline using quadratic curves
     // Left rise
     bodyPath.quadraticBezierTo(
-      cx - w * 0.45, cy - bumps.first.height * 0.3,
-      bumps.first.x, cy - bumps.first.height,
+      cx - w * 0.45,
+      cy - bumps.first.height * 0.3,
+      bumps.first.x,
+      cy - bumps.first.height,
     );
 
     // Bumps along top
@@ -1033,21 +1026,25 @@ class ParallaxBackground extends Component
       final dip = cy - min(prev.height, curr.height) * 0.4;
 
       bodyPath.quadraticBezierTo(
-        midX, dip,
-        curr.x, cy - curr.height,
+        midX,
+        dip,
+        curr.x,
+        cy - curr.height,
       );
     }
 
     // Right descent back to flat bottom
     bodyPath.quadraticBezierTo(
-      cx + w * 0.45, cy - bumps.last.height * 0.3,
-      cx + w * 0.4, cy + h * 0.15,
+      cx + w * 0.45,
+      cy - bumps.last.height * 0.3,
+      cx + w * 0.4,
+      cy + h * 0.15,
     );
     bodyPath.close();
 
     // Main fill
-    paint.color = Color.from(
-        alpha: cloudAlpha, red: 0.95, green: 0.95, blue: 0.98);
+    paint.color =
+        Color.from(alpha: cloudAlpha, red: 0.95, green: 0.95, blue: 0.98);
     canvas.drawPath(bodyPath, paint);
 
     // Top highlight (brighter bumps)
@@ -1058,18 +1055,21 @@ class ParallaxBackground extends Component
         width: bump.width * 0.7,
         height: bump.height * 0.5,
       ));
-      paint.color = Color.from(
-          alpha: cloudAlpha * 0.4, red: 1.0, green: 1.0, blue: 1.0);
+      paint.color =
+          Color.from(alpha: cloudAlpha * 0.4, red: 1.0, green: 1.0, blue: 1.0);
       canvas.drawPath(highlightPath, paint);
     }
 
     // Bottom shading (darker underside)
     final bottomPath = Path();
     bottomPath.addRect(Rect.fromLTRB(
-      cx - w * 0.35, cy, cx + w * 0.35, cy + h * 0.15,
+      cx - w * 0.35,
+      cy,
+      cx + w * 0.35,
+      cy + h * 0.15,
     ));
-    paint.color = Color.from(
-        alpha: cloudAlpha * 0.2, red: 0.6, green: 0.6, blue: 0.75);
+    paint.color =
+        Color.from(alpha: cloudAlpha * 0.2, red: 0.6, green: 0.6, blue: 0.75);
     canvas.drawPath(bottomPath, paint);
   }
 
@@ -1084,9 +1084,7 @@ class ParallaxBackground extends Component
     double y,
     Color color,
   ) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
+    _fillPaint.color = color;
 
     final path = Path();
     final random = Random(formation.seed);
@@ -1107,7 +1105,7 @@ class ParallaxBackground extends Component
     path.lineTo(x + w, y + h);
     path.close();
 
-    canvas.drawPath(path, paint);
+    canvas.drawPath(path, _fillPaint);
   }
 }
 

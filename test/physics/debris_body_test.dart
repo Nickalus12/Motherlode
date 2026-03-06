@@ -73,8 +73,7 @@ void main() {
     if (speed >= threshold) {
       restingTime = 0.0;
     }
-    expect(restingTime, equals(0.0),
-        reason: 'Timer should reset when bumped');
+    expect(restingTime, equals(0.0), reason: 'Timer should reset when bumped');
   });
 
   // 6. Terrain conversion callback

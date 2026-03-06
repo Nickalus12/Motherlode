@@ -58,7 +58,7 @@ class WorldGenerator {
   /// chunkX, chunkY are chunk indices (not pixel/tile coords)
   /// Returns a 2D grid of TerrainCells [chunkSize x chunkSize]
   List<List<TerrainCell>> generateChunk(int chunkX, int chunkY) {
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
     final grid = List.generate(
       size,
       (y) => List.generate(size, (x) => TerrainCell()),
@@ -116,7 +116,8 @@ class WorldGenerator {
         final worldX = worldStartX + x;
         final worldY = worldStartY + y;
         final depthFeet = worldY * GameConstants.feetPerTile;
-        final biome = BiomeRegistry.getBiomeAtDepth(depthFeet);
+        final biome = BiomeRegistry.getBiomeAtPosition(
+            depthFeet, worldX.toDouble(), seed);
 
         final noiseVal = NoiseUtils.sampleMultiOctave(
           seed: seed,
@@ -299,14 +300,16 @@ class WorldGenerator {
     for (int y = 1; y < size - 1; y++) {
       final worldY = worldStartY + y;
       final depthFeet = worldY * GameConstants.feetPerTile;
-      final biome = BiomeRegistry.getBiomeAtDepth(depthFeet);
+      // Use center X of chunk for smoothing biome check (per-row approximation)
+      final centerX = worldStartX + size ~/ 2;
+      final biome =
+          BiomeRegistry.getBiomeAtPosition(depthFeet, centerX.toDouble(), seed);
 
       // Skip smoothing for Hell biome - keep jagged geometry
       if (biome.type == BiomeType.hell) continue;
 
       // Extra smoothing for surface/topsoil - softer, rounder caves
-      if (biome.type == BiomeType.topsoil ||
-          biome.type == BiomeType.surface) {
+      if (biome.type == BiomeType.topsoil || biome.type == BiomeType.surface) {
         for (int x = 1; x < size - 1; x++) {
           int solidNeighbors = 0;
           for (int dy = -1; dy <= 1; dy++) {
@@ -345,9 +348,11 @@ class WorldGenerator {
       for (int x = 0; x < size; x++) {
         if (grid[y][x].type == CellType.empty) continue;
 
+        final worldX = worldStartX + x;
         final worldY = worldStartY + y;
         final depthFeet = worldY * GameConstants.feetPerTile;
-        final biome = BiomeRegistry.getBiomeAtDepth(depthFeet);
+        final biome = BiomeRegistry.getBiomeAtPosition(
+            depthFeet, worldX.toDouble(), seed);
 
         grid[y][x].type = biome.primaryCellType;
       }
@@ -380,8 +385,7 @@ class WorldGenerator {
 
         // Vary SDF for solid cells between -0.05 and -0.45
         // (all negative = stays solid, but edge interpolation varies)
-        grid[y][x].sdf =
-            (-0.05 - microNoise * 0.4).clamp(-0.45, -0.05);
+        grid[y][x].sdf = (-0.05 - microNoise * 0.4).clamp(-0.45, -0.05);
       }
     }
   }
@@ -429,8 +433,7 @@ class WorldGenerator {
             frequency: 0.005,
           );
           if (specialNoise > 0.98) {
-            final collectible =
-                _selectCollectible(depthFeet, worldX + worldY);
+            final collectible = _selectCollectible(depthFeet, worldX + worldY);
             if (collectible != null) {
               grid[y][x].type = CellType.ore;
               grid[y][x].oreType = collectible;
@@ -512,7 +515,8 @@ class WorldGenerator {
         final worldX = worldStartX + x;
         final worldY = worldStartY + y;
         final depthFeet = worldY * GameConstants.feetPerTile;
-        final biome = BiomeRegistry.getBiomeAtDepth(depthFeet);
+        final biome = BiomeRegistry.getBiomeAtPosition(
+            depthFeet, worldX.toDouble(), seed);
 
         // Lava placement - irregular blobs
         if (biome.hasLava && grid[y][x].type != CellType.ore) {
@@ -560,8 +564,7 @@ class WorldGenerator {
 
         if (depthFeet < 500) continue;
 
-        final available =
-            CreatureDefinitions.getCreaturesAtDepth(depthFeet);
+        final available = CreatureDefinitions.getCreaturesAtDepth(depthFeet);
         if (available.isEmpty) continue;
 
         final creatureNoise = NoiseUtils.sampleCreatureNoise(
@@ -696,7 +699,7 @@ class WorldGenerator {
     Map<String, List<List<TerrainCell>>> chunks,
     int targetDepthTiles,
   ) {
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
     final visited = <String>{};
     final stack = <Point<int>>[];
 
@@ -724,12 +727,8 @@ class WorldGenerator {
         final nkey = '$nx,$ny';
         if (visited.contains(nkey)) continue;
 
-        final chunkX = nx >= 0
-            ? nx ~/ size
-            : -(((-nx - 1) ~/ size) + 1);
-        final chunkY = ny >= 0
-            ? ny ~/ size
-            : -(((-ny - 1) ~/ size) + 1);
+        final chunkX = nx >= 0 ? nx ~/ size : -(((-nx - 1) ~/ size) + 1);
+        final chunkY = ny >= 0 ? ny ~/ size : -(((-ny - 1) ~/ size) + 1);
         final localX = ((nx % size) + size) % size;
         final localY = ((ny % size) + size) % size;
 
@@ -754,19 +753,15 @@ class WorldGenerator {
     int targetDepthTiles,
     int attempt,
   ) {
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
     final pathRng = Random(seed + attempt * 31);
     int carveX = 0;
 
     for (int y = 0; y < targetDepthTiles; y++) {
       for (int dx = -1; dx <= 1; dx++) {
         final x = carveX + dx;
-        final chunkX = x >= 0
-            ? x ~/ size
-            : -(((-x - 1) ~/ size) + 1);
-        final chunkY = y >= 0
-            ? y ~/ size
-            : -(((-y - 1) ~/ size) + 1);
+        final chunkX = x >= 0 ? x ~/ size : -(((-x - 1) ~/ size) + 1);
+        final chunkY = y >= 0 ? y ~/ size : -(((-y - 1) ~/ size) + 1);
         final localX = ((x % size) + size) % size;
         final localY = ((y % size) + size) % size;
 

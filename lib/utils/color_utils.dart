@@ -162,8 +162,7 @@ class ColorUtils {
     final hash4 = (((fx * 251.1 + fy * 173.9).abs()) % 80) / 80.0;
 
     // Multi-scale brightness: larger amplitude at bigger scales
-    final brightness =
-        (hash1 - 0.5) * 0.16 +
+    final brightness = (hash1 - 0.5) * 0.16 +
         (hash2 - 0.5) * 0.10 +
         (hash3 - 0.5) * 0.06 +
         (hash4 - 0.5) * 0.03;
@@ -176,9 +175,17 @@ class ColorUtils {
 
     // Apply brightness + warmth + saturation
     final avgBright = (color.r + color.g + color.b) / 3.0;
-    final r = (color.r + brightness + warmShift + (color.r - avgBright) * satVar).clamp(0.0, 1.0);
-    final g = (color.g + brightness - warmShift * 0.3 + (color.g - avgBright) * satVar).clamp(0.0, 1.0);
-    final b = (color.b + brightness - warmShift + (color.b - avgBright) * satVar).clamp(0.0, 1.0);
+    final r =
+        (color.r + brightness + warmShift + (color.r - avgBright) * satVar)
+            .clamp(0.0, 1.0);
+    final g = (color.g +
+            brightness -
+            warmShift * 0.3 +
+            (color.g - avgBright) * satVar)
+        .clamp(0.0, 1.0);
+    final b =
+        (color.b + brightness - warmShift + (color.b - avgBright) * satVar)
+            .clamp(0.0, 1.0);
     return Color.from(alpha: color.a, red: r, green: g, blue: b);
   }
 
@@ -242,8 +249,8 @@ class ColorUtils {
     if (depthFeet <= GameConstants.rockEnd) {
       final t = (depthFeet - GameConstants.topsoilEnd) /
           (GameConstants.rockEnd - GameConstants.topsoilEnd);
-      return _lerp(GameConstants.shallowAmbientLight,
-          GameConstants.deepAmbientLight, t);
+      return _lerp(
+          GameConstants.shallowAmbientLight, GameConstants.deepAmbientLight, t);
     }
 
     if (depthFeet <= GameConstants.volcanicEnd) {

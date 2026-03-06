@@ -91,7 +91,7 @@ class MarchingSquares {
     final polygons = <MarchingSquaresPoly>[];
     final collisionSegments = <List<Offset>>[];
     final size = cells.length;
-    final step = 1.0 / _subdiv;
+    const step = 1.0 / _subdiv;
 
     // Cell accessor that handles border lookups
     TerrainCell? cellAt(int x, int y) {
@@ -301,8 +301,8 @@ class MarchingSquares {
 
           // Brightness variation from average SDF depth
           if (solidSdfs.isNotEmpty) {
-            final avgSdf = solidSdfs.fold<double>(0, (s, v) => s + v) /
-                solidSdfs.length;
+            final avgSdf =
+                solidSdfs.fold<double>(0, (s, v) => s + v) / solidSdfs.length;
             // Deeper into solid = slightly darker, near surface = lighter
             final t = ((-avgSdf) / 2.0).clamp(0.0, 1.0);
             fillColor = Color.lerp(

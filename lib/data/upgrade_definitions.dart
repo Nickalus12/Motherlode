@@ -90,7 +90,8 @@ class UpgradeDefinitions {
         name: 'Multi Drill',
         cost: 0, // Requires Ancient Scroll
         statValue: 900,
-        description: 'Ancient tech. Drills 3 cells wide. [Ancient Scroll required]',
+        description:
+            'Ancient tech. Drills 3 cells wide. [Ancient Scroll required]',
       ),
     ],
   );
@@ -308,7 +309,8 @@ class UpgradeDefinitions {
         name: 'Magma Converter',
         cost: 0, // Requires Ancient Scroll
         statValue: 1.0,
-        description: 'Converts heat to energy. Immune to lava. [Ancient Scroll required]',
+        description:
+            'Converts heat to energy. Immune to lava. [Ancient Scroll required]',
       ),
     ],
   );

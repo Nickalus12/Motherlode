@@ -5,56 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:motherlode/world/genesis_pipeline.dart';
 
 // ---------------------------------------------------------------------------
-// Phase display data
+// Phase accent colors
 // ---------------------------------------------------------------------------
-
-const _phaseInfo = <GenesisPhase, (String, String, String)>{
-  GenesisPhase.tectonicFormation: (
-    'FORMING BEDROCK',
-    'Pressure and heat forge the foundation of your world',
-    '4.6 Billion Years Ago',
-  ),
-  GenesisPhase.volcanicIntrusion: (
-    'VOLCANIC ACTIVITY',
-    'Magma chambers form deep beneath the crust',
-    '3.8 Billion Years Ago',
-  ),
-  GenesisPhase.mineralSeeding: (
-    'CRYSTALLIZATION',
-    'Minerals precipitate from superheated fluid',
-    '2.5 Billion Years Ago',
-  ),
-  GenesisPhase.waterTableBirth: (
-    'DEEP AQUIFERS',
-    'Water seeps through porous stone',
-    '1.2 Billion Years Ago',
-  ),
-  GenesisPhase.greatErosion: (
-    'THE GREAT EROSION',
-    'Rivers carve through ancient stone',
-    '500 Million Years Ago',
-  ),
-  GenesisPhase.caveNetworks: (
-    'CAVE FORMATION',
-    'Vast caverns hollow beneath the surface',
-    '100 Million Years Ago',
-  ),
-  GenesisPhase.oreMaturation: (
-    'ORE VEINS MATURE',
-    'Precious metals settle into their final form',
-    '10 Million Years Ago',
-  ),
-  GenesisPhase.surfaceWeathering: (
-    'SURFACE DETAIL',
-    'Wind and rain sculpt the landscape',
-    '10,000 Years Ago',
-  ),
-  GenesisPhase.worldReady: (
-    'WORLD READY',
-    'The earth is ready. Begin your descent.',
-    'Present Day',
-  ),
-};
 
 const _phaseAccent = <GenesisPhase, Color>{
   GenesisPhase.tectonicFormation: Color(0xFFFF4400),
@@ -67,6 +19,79 @@ const _phaseAccent = <GenesisPhase, Color>{
   GenesisPhase.surfaceWeathering: Color(0xFF88AA66),
   GenesisPhase.worldReady: Color(0xFFFFCC44),
 };
+
+// ---------------------------------------------------------------------------
+// Particle types
+// ---------------------------------------------------------------------------
+
+const _typeRock = 0;
+const _typeMagma = 1;
+const _typeOre = 2;
+const _typeWater = 3;
+const _typeGrass = 4;
+
+// ---------------------------------------------------------------------------
+// Particle data (plain class, minimal overhead)
+// ---------------------------------------------------------------------------
+
+class _Particle {
+  double x, y, vx, vy, radius;
+  Color color;
+  int type;
+  int spawnFrame; // for age-based removal
+
+  _Particle({
+    required this.x,
+    required this.y,
+    this.vx = 0,
+    this.vy = 0,
+    this.radius = 3.0,
+    this.color = const Color(0xFF3A2A1A),
+    this.type = _typeRock,
+    this.spawnFrame = 0,
+  });
+
+  // Initialized as fields, not constructor params (avoids unused-param warnings)
+  double life = 1.0;
+  bool settled = false;
+}
+
+// ---------------------------------------------------------------------------
+// Spatial hash for O(n) neighbor lookups
+// ---------------------------------------------------------------------------
+
+class _SpatialHash {
+  static const double cellSize = 10.0;
+  final Map<int, List<int>> _cells = {};
+
+  void clear() => _cells.clear();
+
+  int _key(double x, double y) {
+    final cx = (x / cellSize).floor();
+    final cy = (y / cellSize).floor();
+    // Pack two ints into one using Cantor pairing
+    return cx * 73856093 ^ cy * 19349663;
+  }
+
+  void insert(int index, double x, double y) {
+    final key = _key(x, y);
+    (_cells[key] ??= []).add(index);
+  }
+
+  /// Returns indices of particles in the same and neighboring cells.
+  void queryNeighbors(double x, double y, List<int> result) {
+    result.clear();
+    final cx = (x / cellSize).floor();
+    final cy = (y / cellSize).floor();
+    for (int dx = -1; dx <= 1; dx++) {
+      for (int dy = -1; dy <= 1; dy++) {
+        final key = (cx + dx) * 73856093 ^ (cy + dy) * 19349663;
+        final cell = _cells[key];
+        if (cell != null) result.addAll(cell);
+      }
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Genesis Screen Widget
@@ -91,14 +116,32 @@ class _GenesisScreenState extends State<GenesisScreen>
   StreamSubscription<(GenesisPhase, double)>? _progressSubscription;
 
   GenesisPhase _currentPhase = GenesisPhase.tectonicFormation;
-  double _phaseProgress = 0.0;
   double _overallProgress = 0.0;
   bool _worldReady = false;
   bool _exiting = false;
 
   late final AnimationController _pulseController;
-  late final AnimationController _particleController;
-  late final AnimationController _bgController;
+  late final AnimationController _simController;
+  late final AnimationController _enterController;
+  late final AnimationController _exitController;
+
+  // Physics sim state
+  final List<_Particle> _particles = [];
+  final _SpatialHash _spatialHash = _SpatialHash();
+  final Random _rng = Random(42);
+  int _frameCount = 0;
+  double _lastTime = 0;
+
+  // Pre-allocated paint objects
+  final Paint _solidPaint = Paint()..style = PaintingStyle.fill;
+  final Paint _glowPaint = Paint()..style = PaintingStyle.fill;
+
+  // Reusable neighbor list
+  final List<int> _neighborBuf = [];
+
+  // Pod descent for worldReady phase
+  double _podY = -30;
+  bool _podActive = false;
 
   @override
   void initState() {
@@ -109,21 +152,26 @@ class _GenesisScreenState extends State<GenesisScreen>
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
 
-    _particleController = AnimationController(
+    _simController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 6),
+      duration: const Duration(seconds: 1),
     )..repeat();
+    _simController.addListener(_tick);
 
-    _bgController = AnimationController(
+    _enterController = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 10),
-    )..repeat();
+      duration: const Duration(milliseconds: 800),
+    )..forward();
+
+    _exitController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
 
     _progressSubscription = widget.progressStream?.listen((event) {
       if (!mounted) return;
       setState(() {
         _currentPhase = event.$1;
-        _phaseProgress = event.$2;
         _overallProgress = GenesisPipeline.overallProgress(
           event.$1,
           event.$2,
@@ -138,281 +186,492 @@ class _GenesisScreenState extends State<GenesisScreen>
   @override
   void dispose() {
     _progressSubscription?.cancel();
+    _simController.removeListener(_tick);
     _pulseController.dispose();
-    _particleController.dispose();
-    _bgController.dispose();
+    _simController.dispose();
+    _enterController.dispose();
+    _exitController.dispose();
     super.dispose();
   }
 
   void _onTap() {
     if (!_worldReady || _exiting) return;
     setState(() => _exiting = true);
-    widget.onComplete();
+    _exitController.forward().then((_) {
+      if (mounted) widget.onComplete();
+    });
   }
+
+  // -----------------------------------------------------------------------
+  // Physics simulation tick
+  // -----------------------------------------------------------------------
+
+  void _tick() {
+    final now = _simController.lastElapsedDuration?.inMicroseconds ?? 0;
+    final nowSec = now / 1000000.0;
+    var dt = nowSec - _lastTime;
+    _lastTime = nowSec;
+
+    // Clamp dt to avoid explosion on first frame or tab-away
+    if (dt <= 0 || dt > 0.05) dt = 0.016;
+
+    final size = MediaQuery.of(context).size;
+    final screenW = size.width;
+    final screenH = size.height;
+
+    // Spawn particles based on phase
+    if (_currentPhase != GenesisPhase.worldReady) {
+      _spawnParticles(screenW, screenH);
+    } else if (!_podActive) {
+      _podActive = true;
+      _podY = -30;
+    }
+
+    // Pod descent animation
+    if (_podActive && _podY < _findTopSurface(screenW / 2, screenH) - 20) {
+      _podY += 40 * dt;
+    }
+
+    // Rebuild spatial hash
+    _spatialHash.clear();
+    for (int i = 0; i < _particles.length; i++) {
+      _spatialHash.insert(i, _particles[i].x, _particles[i].y);
+    }
+
+    // Physics update
+    const gravity = 200.0;
+    const bounceDamp = 0.3;
+    const friction = 0.98;
+
+    for (int i = 0; i < _particles.length; i++) {
+      final p = _particles[i];
+
+      // Phase-specific forces
+      _applyPhaseForces(p, dt);
+
+      // Dissolving particles (cave phase)
+      if (p.life <= 0) continue;
+
+      if (!p.settled || p.type == _typeWater) {
+        // Gravity
+        p.vy += gravity * dt;
+
+        // Apply velocity
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+
+        // Horizontal friction
+        p.vx *= friction;
+
+        // Floor collision
+        if (p.y + p.radius > screenH) {
+          p.y = screenH - p.radius;
+          p.vy = -p.vy * bounceDamp;
+          p.vx *= 0.9;
+          if (p.vy.abs() < 5) {
+            p.vy = 0;
+            p.settled = true;
+          }
+        }
+
+        // Wall collision
+        if (p.x - p.radius < 0) {
+          p.x = p.radius;
+          p.vx = -p.vx * bounceDamp;
+        } else if (p.x + p.radius > screenW) {
+          p.x = screenW - p.radius;
+          p.vx = -p.vx * bounceDamp;
+        }
+
+        // Particle-particle collision (only check neighbors)
+        _spatialHash.queryNeighbors(p.x, p.y, _neighborBuf);
+        for (final j in _neighborBuf) {
+          if (j <= i) continue;
+          final q = _particles[j];
+          final dx = q.x - p.x;
+          final dy = q.y - p.y;
+          final dist = sqrt(dx * dx + dy * dy);
+          final minDist = p.radius + q.radius;
+          if (dist < minDist && dist > 0.01) {
+            final nx = dx / dist;
+            final ny = dy / dist;
+            final overlap = (minDist - dist) * 0.5;
+            p.x -= nx * overlap;
+            p.y -= ny * overlap;
+            q.x += nx * overlap;
+            q.y += ny * overlap;
+
+            // Simple elastic-ish response
+            final relVx = p.vx - q.vx;
+            final relVy = p.vy - q.vy;
+            final relDot = relVx * nx + relVy * ny;
+            if (relDot > 0) {
+              final impulse = relDot * bounceDamp;
+              p.vx -= impulse * nx;
+              p.vy -= impulse * ny;
+              q.vx += impulse * nx;
+              q.vy += impulse * ny;
+            }
+
+            // Settling check
+            if (p.vy.abs() < 3 && p.y + p.radius >= screenH - 1) {
+              p.settled = true;
+              p.vy = 0;
+            }
+            if (q.vy.abs() < 3 && q.y + q.radius >= screenH - 1) {
+              q.settled = true;
+              q.vy = 0;
+            }
+          }
+        }
+
+        // Settle if barely moving and on floor
+        if (p.vy.abs() < 2 && p.vx.abs() < 2 &&
+            p.y + p.radius >= screenH - 2) {
+          p.settled = true;
+          p.vy = 0;
+        }
+      }
+    }
+
+    // Remove dead particles
+    _particles.removeWhere((p) => p.life <= 0);
+
+    // Cap at 400: remove oldest settled particles
+    while (_particles.length > 400) {
+      final idx = _particles.indexWhere((p) => p.settled);
+      if (idx >= 0) {
+        _particles.removeAt(idx);
+      } else {
+        _particles.removeAt(0);
+      }
+    }
+
+    _frameCount++;
+    setState(() {});
+  }
+
+  void _spawnParticles(double screenW, double screenH) {
+    final count = 3 + _rng.nextInt(3); // 3-5 per frame
+    for (int i = 0; i < count; i++) {
+      switch (_currentPhase) {
+        case GenesisPhase.tectonicFormation:
+          _spawnRock(screenW, screenH);
+          break;
+        case GenesisPhase.volcanicIntrusion:
+          _spawnMagma(screenW, screenH);
+          break;
+        case GenesisPhase.mineralSeeding:
+          _spawnOre(screenW, screenH);
+          break;
+        case GenesisPhase.waterTableBirth:
+          _spawnWater(screenW, screenH);
+          break;
+        case GenesisPhase.greatErosion:
+          _applyErosionWind();
+          break;
+        case GenesisPhase.caveNetworks:
+          _dissolveSomeRocks();
+          break;
+        case GenesisPhase.oreMaturation:
+          _pulseOres();
+          break;
+        case GenesisPhase.surfaceWeathering:
+          _spawnGrass(screenW, screenH);
+          break;
+        case GenesisPhase.worldReady:
+          break;
+      }
+    }
+  }
+
+  Color _randomRockColor() {
+    final t = _rng.nextDouble();
+    return Color.lerp(
+      const Color(0xFF3A2A1A),
+      const Color(0xFF5A4A3A),
+      t,
+    )!;
+  }
+
+  Color _randomMagmaColor() {
+    final t = _rng.nextDouble();
+    return Color.lerp(
+      const Color(0xFFFF4400),
+      const Color(0xFFFF8800),
+      t,
+    )!;
+  }
+
+  Color _randomOreColor() {
+    final colors = [
+      const Color(0xFFFFD700),
+      const Color(0xFF50C878),
+      const Color(0xFF4488CC),
+    ];
+    return colors[_rng.nextInt(colors.length)];
+  }
+
+  Color _randomWaterColor() {
+    final t = _rng.nextDouble();
+    return Color.lerp(
+      const Color(0xFF2266AA),
+      const Color(0xFF4488CC),
+      t,
+    )!;
+  }
+
+  Color _randomGrassColor() {
+    final t = _rng.nextDouble();
+    return Color.lerp(
+      const Color(0xFF446622),
+      const Color(0xFF669933),
+      t,
+    )!;
+  }
+
+  void _spawnRock(double w, double h) {
+    _particles.add(_Particle(
+      x: _rng.nextDouble() * w,
+      y: -10 - _rng.nextDouble() * 40,
+      vx: (_rng.nextDouble() - 0.5) * 30,
+      vy: _rng.nextDouble() * 50,
+      radius: 2.5 + _rng.nextDouble() * 3.5,
+      color: _randomRockColor(),
+      type: _typeRock,
+      spawnFrame: _frameCount,
+    ));
+  }
+
+  void _spawnMagma(double w, double h) {
+    final cx = w * 0.3 + _rng.nextDouble() * w * 0.4;
+    _particles.add(_Particle(
+      x: cx + (_rng.nextDouble() - 0.5) * 60,
+      y: h + 5,
+      vx: (_rng.nextDouble() - 0.5) * 80,
+      vy: -150 - _rng.nextDouble() * 200,
+      radius: 2.0 + _rng.nextDouble() * 3.0,
+      color: _randomMagmaColor(),
+      type: _typeMagma,
+      spawnFrame: _frameCount,
+    ));
+  }
+
+  void _spawnOre(double w, double h) {
+    // Spawn within the settled pile area
+    final targetY = h - 20 - _rng.nextDouble() * (h * 0.3);
+    _particles.add(_Particle(
+      x: _rng.nextDouble() * w,
+      y: targetY,
+      vx: (_rng.nextDouble() - 0.5) * 10,
+      vy: (_rng.nextDouble() - 0.5) * 10,
+      radius: 1.5 + _rng.nextDouble() * 2.0,
+      color: _randomOreColor(),
+      type: _typeOre,
+      spawnFrame: _frameCount,
+    ));
+  }
+
+  void _spawnWater(double w, double h) {
+    _particles.add(_Particle(
+      x: _rng.nextDouble() * w,
+      y: -5 - _rng.nextDouble() * 20,
+      vx: (_rng.nextDouble() - 0.5) * 20,
+      vy: 30 + _rng.nextDouble() * 60,
+      radius: 1.5 + _rng.nextDouble() * 2.0,
+      color: _randomWaterColor(),
+      type: _typeWater,
+      spawnFrame: _frameCount,
+    ));
+  }
+
+  void _applyErosionWind() {
+    // Apply horizontal wind to water particles, scatter some rocks
+    final windForce = 60.0 + _rng.nextDouble() * 40;
+    for (final p in _particles) {
+      if (p.type == _typeWater) {
+        p.vx += windForce * 0.3;
+        p.settled = false;
+      } else if (p.type == _typeRock && _rng.nextDouble() < 0.02) {
+        p.vx += (_rng.nextDouble() - 0.3) * windForce;
+        p.vy -= 20 + _rng.nextDouble() * 40;
+        p.settled = false;
+      }
+    }
+  }
+
+  void _dissolveSomeRocks() {
+    // Shrink and fade random settled rock particles
+    for (final p in _particles) {
+      if (p.type == _typeRock && p.settled && _rng.nextDouble() < 0.008) {
+        p.life -= 0.15;
+        p.radius *= 0.85;
+      }
+    }
+  }
+
+  void _pulseOres() {
+    // Make ore particles pulse brighter
+    for (final p in _particles) {
+      if (p.type == _typeOre) {
+        final pulse = (sin(_frameCount * 0.15 + p.x * 0.1) + 1) * 0.5;
+        p.life = 0.6 + 0.4 * pulse;
+      }
+    }
+  }
+
+  void _spawnGrass(double w, double h) {
+    // Spawn green particles on the top surface of the pile
+    final topY = _findTopSurface(
+      _rng.nextDouble() * w,
+      h,
+    );
+    _particles.add(_Particle(
+      x: _rng.nextDouble() * w,
+      y: topY - 2,
+      vx: 0,
+      vy: 5,
+      radius: 1.5 + _rng.nextDouble() * 1.5,
+      color: _randomGrassColor(),
+      type: _typeGrass,
+      spawnFrame: _frameCount,
+    ));
+  }
+
+  double _findTopSurface(double x, double screenH) {
+    // Find the topmost settled particle near x
+    double minY = screenH;
+    for (final p in _particles) {
+      if (p.settled && (p.x - x).abs() < 20 && p.y < minY) {
+        minY = p.y;
+      }
+    }
+    return minY;
+  }
+
+  void _applyPhaseForces(_Particle p, double dt) {
+    // Erosion wind during greatErosion
+    if (_currentPhase == GenesisPhase.greatErosion && p.type == _typeWater) {
+      p.vx += 15 * dt;
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Build
+  // -----------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
-    final info = _phaseInfo[_currentPhase];
-    final title = info?.$1 ?? '';
-    final description = info?.$2 ?? '';
-    final year = info?.$3 ?? '';
     final accent = _phaseAccent[_currentPhase] ?? Colors.orange;
 
-    return GestureDetector(
-      onTap: _onTap,
-      child: Scaffold(
-        backgroundColor: Colors.black,
-        body: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Animated background gradient that shifts with phase
-            AnimatedBuilder(
-              animation: _bgController,
-              builder: (context, _) {
-                final wave = sin(_bgController.value * pi * 2) * 0.03;
-                return Container(
-                  decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      center: Alignment(0, 0.3 + wave),
-                      radius: 1.2,
-                      colors: [
-                        Color.lerp(const Color(0xFF0A0A0A), accent, 0.08 + wave)!,
-                        const Color(0xFF050505),
-                        Colors.black,
-                      ],
-                      stops: const [0.0, 0.5, 1.0],
-                    ),
-                  ),
-                );
-              },
-            ),
+    return FadeTransition(
+      opacity: CurvedAnimation(
+        parent: _enterController,
+        curve: Curves.easeOut,
+      ),
+      child: GestureDetector(
+        onTap: _onTap,
+        child: FadeTransition(
+          opacity: Tween<double>(begin: 1.0, end: 0.0).animate(
+            CurvedAnimation(parent: _exitController, curve: Curves.easeIn),
+          ),
+          child: Scaffold(
+            backgroundColor: Colors.black,
+            body: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Subtle background gradient that shifts with phase
+                _AnimatedBg(accent: accent, pulse: _pulseController),
 
-            // Floating particle system
-            AnimatedBuilder(
-              animation: _particleController,
-              builder: (context, _) {
-                return CustomPaint(
-                  size: MediaQuery.of(context).size,
-                  painter: _GenesisParticlePainter(
-                    phase: _particleController.value,
+                // Physics particle canvas
+                CustomPaint(
+                  painter: _PhysicsParticlePainter(
+                    particles: _particles,
+                    solidPaint: _solidPaint,
+                    glowPaint: _glowPaint,
+                    podY: _podActive ? _podY : null,
+                    podX: MediaQuery.of(context).size.width / 2,
                     accentColor: accent,
-                    intensity: _overallProgress,
+                    orePhase: _currentPhase == GenesisPhase.oreMaturation,
+                    frameCount: _frameCount,
                   ),
-                );
-              },
-            ),
-
-            // Horizontal accent lines (geological strata feel)
-            AnimatedBuilder(
-              animation: _bgController,
-              builder: (context, _) {
-                return CustomPaint(
                   size: MediaQuery.of(context).size,
-                  painter: _StrataLinesPainter(
-                    phase: _bgController.value,
-                    accent: accent,
-                    progress: _overallProgress,
-                  ),
-                );
-              },
-            ),
-
-            // Center content
-            SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Column(
-                  children: [
-                    const Spacer(flex: 3),
-
-                    // Year / era label
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 500),
-                      child: Text(
-                        year.toUpperCase(),
-                        key: ValueKey(year),
-                        style: TextStyle(
-                          color: accent.withValues(alpha: 0.5),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 4,
-                          decoration: TextDecoration.none,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Phase title with glow
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 400),
-                      child: Text(
-                        title,
-                        key: ValueKey(title),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.95),
-                          fontSize: 26,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 5,
-                          decoration: TextDecoration.none,
-                          shadows: [
-                            Shadow(
-                              color: accent.withValues(alpha: 0.4),
-                              blurRadius: 20,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // Accent line under title
-                    const SizedBox(height: 8),
-                    AnimatedBuilder(
-                      animation: _pulseController,
-                      builder: (context, _) {
-                        final pulse = _pulseController.value;
-                        return Container(
-                          width: 120 + 20 * pulse,
-                          height: 1.5,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.transparent,
-                                accent.withValues(alpha: 0.4 + 0.2 * pulse),
-                                accent.withValues(alpha: 0.4 + 0.2 * pulse),
-                                Colors.transparent,
-                              ],
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: accent.withValues(alpha: 0.2 * pulse),
-                                blurRadius: 8,
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Description
-                    AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 600),
-                      child: Text(
-                        description,
-                        key: ValueKey(description),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.35),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w400,
-                          height: 1.5,
-                          letterSpacing: 0.5,
-                          decoration: TextDecoration.none,
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(height: 48),
-
-                    // Custom phase progress bar
-                    _buildPhaseProgress(accent),
-
-                    const Spacer(flex: 2),
-
-                    // Overall progress
-                    _buildOverallProgress(accent),
-
-                    const SizedBox(height: 28),
-
-                    // Tap to begin
-                    if (_worldReady)
-                      AnimatedBuilder(
-                        animation: _pulseController,
-                        builder: (context, child) {
-                          final pulse = _pulseController.value;
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 32,
-                              vertical: 12,
-                            ),
-                            decoration: BoxDecoration(
-                              border: Border.all(
-                                color: accent.withValues(alpha: 0.3 + 0.3 * pulse),
-                              ),
-                              borderRadius: BorderRadius.circular(30),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: accent.withValues(alpha: 0.1 * pulse),
-                                  blurRadius: 20,
-                                  spreadRadius: -4,
-                                ),
-                              ],
-                            ),
-                            child: Opacity(
-                              opacity: 0.5 + 0.5 * pulse,
-                              child: child,
-                            ),
-                          );
-                        },
-                        child: Text(
-                          'TAP TO BEGIN',
-                          style: TextStyle(
-                            color: accent,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 6,
-                            decoration: TextDecoration.none,
-                          ),
-                        ),
-                      )
-                    else
-                      const SizedBox(height: 47),
-
-                    const SizedBox(height: 48),
-                  ],
                 ),
-              ),
+
+                // Bottom UI: progress dots + bar + percentage + tap to begin
+                SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Column(
+                      children: [
+                        const Spacer(),
+
+                        // Progress indicator
+                        _buildProgress(accent),
+
+                        const SizedBox(height: 28),
+
+                        // Tap to begin
+                        if (_worldReady)
+                          AnimatedBuilder(
+                            animation: _pulseController,
+                            builder: (context, child) {
+                              final pulse = _pulseController.value;
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 32,
+                                  vertical: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: accent.withValues(
+                                        alpha: 0.3 + 0.3 * pulse),
+                                  ),
+                                  borderRadius: BorderRadius.circular(30),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: accent.withValues(
+                                          alpha: 0.1 * pulse),
+                                      blurRadius: 20,
+                                      spreadRadius: -4,
+                                    ),
+                                  ],
+                                ),
+                                child: Opacity(
+                                  opacity: 0.5 + 0.5 * pulse,
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: Text(
+                              'TAP TO BEGIN',
+                              style: TextStyle(
+                                color: accent,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: 6,
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
+                          )
+                        else
+                          const SizedBox(height: 47),
+
+                        const SizedBox(height: 48),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildPhaseProgress(Color accent) {
-    final percent = (_phaseProgress * 100).round();
-    return Column(
-      children: [
-        // Phase progress percentage
-        Text(
-          '$percent%',
-          style: TextStyle(
-            color: accent.withValues(alpha: 0.6),
-            fontSize: 36,
-            fontWeight: FontWeight.w100,
-            decoration: TextDecoration.none,
-          ),
-        ),
-        const SizedBox(height: 16),
-        // Custom progress bar
-        SizedBox(
-          width: 220,
-          height: 4,
-          child: CustomPaint(
-            painter: _ProgressBarPainter(
-              progress: _phaseProgress.clamp(0.0, 1.0),
-              color: accent,
-              glowIntensity: _pulseController.value,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildOverallProgress(Color accent) {
+  Widget _buildProgress(Color accent) {
+    final percent = (_overallProgress * 100).round();
     return Column(
       children: [
         // Phase dots
@@ -425,8 +684,8 @@ class _GenesisScreenState extends State<GenesisScreen>
               padding: const EdgeInsets.symmetric(horizontal: 3),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
-                width: isCurrent ? 12 : 6,
-                height: isCurrent ? 4 : 4,
+                width: isCurrent ? 14 : 6,
+                height: 4,
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(2),
                   color: isDone
@@ -448,26 +707,27 @@ class _GenesisScreenState extends State<GenesisScreen>
           }).toList(),
         ),
         const SizedBox(height: 16),
-        // Overall progress bar
+        // Progress bar
         SizedBox(
           width: 260,
-          height: 2,
+          height: 4,
           child: CustomPaint(
             painter: _ProgressBarPainter(
               progress: _overallProgress.clamp(0.0, 1.0),
-              color: Colors.white.withValues(alpha: 0.3),
-              glowIntensity: 0,
+              color: accent,
+              glowIntensity: _pulseController.value,
             ),
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 10),
+        // Percentage
         Text(
-          '${(_overallProgress * 100).round()}% complete',
+          '$percent%',
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.18),
-            fontSize: 10,
+            color: Colors.white.withValues(alpha: 0.25),
+            fontSize: 12,
             fontWeight: FontWeight.w400,
-            letterSpacing: 1,
+            letterSpacing: 2,
             decoration: TextDecoration.none,
           ),
         ),
@@ -477,114 +737,168 @@ class _GenesisScreenState extends State<GenesisScreen>
 }
 
 // ---------------------------------------------------------------------------
-// Custom painters
+// Animated background gradient widget
 // ---------------------------------------------------------------------------
 
-/// Floating particles that rise upward with the phase accent color.
-class _GenesisParticlePainter extends CustomPainter {
-  final double phase;
-  final Color accentColor;
-  final double intensity;
-
-  _GenesisParticlePainter({
-    required this.phase,
-    required this.accentColor,
-    required this.intensity,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rng = Random(42);
-    final paint = Paint()..style = PaintingStyle.fill;
-    final count = 30 + (intensity * 40).toInt();
-
-    for (int i = 0; i < count; i++) {
-      final baseX = rng.nextDouble() * size.width;
-      final baseY = rng.nextDouble() * size.height;
-      final speed = 0.3 + rng.nextDouble() * 1.2;
-      final pSize = 0.5 + rng.nextDouble() * 2.0;
-
-      // Rise upward, drift sideways
-      final x = baseX + sin(phase * pi * 2 * speed + i * 0.7) * 20;
-      final y = (baseY - phase * size.height * speed * 0.15) % size.height;
-
-      final alpha =
-          (0.1 + 0.4 * sin(phase * pi * 2 + i * 0.3)).clamp(0.0, 1.0) *
-              (0.5 + intensity * 0.5);
-
-      if (alpha < 0.02) continue;
-
-      // Mix between accent and warm ember colors
-      final t = rng.nextDouble();
-      final r = accentColor.r * (1 - t) + 1.0 * t;
-      final g = accentColor.g * (1 - t) + 0.4 * t;
-      final b = accentColor.b * (1 - t);
-
-      paint.color = Color.from(
-        alpha: alpha,
-        red: r.clamp(0.0, 1.0),
-        green: g.clamp(0.0, 1.0),
-        blue: b.clamp(0.0, 1.0),
-      );
-      canvas.drawCircle(Offset(x, y), pSize, paint);
-
-      // Glow around larger particles
-      if (pSize > 1.5) {
-        paint.color = Color.from(
-          alpha: alpha * 0.12,
-          red: r.clamp(0.0, 1.0),
-          green: g.clamp(0.0, 1.0),
-          blue: b.clamp(0.0, 1.0),
-        );
-        canvas.drawCircle(Offset(x, y), pSize * 4, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(_GenesisParticlePainter old) => true;
-}
-
-/// Horizontal strata-like lines that slowly drift, giving geological feel.
-class _StrataLinesPainter extends CustomPainter {
-  final double phase;
+class _AnimatedBg extends StatelessWidget {
   final Color accent;
-  final double progress;
+  final AnimationController pulse;
 
-  _StrataLinesPainter({
-    required this.phase,
-    required this.accent,
-    required this.progress,
+  const _AnimatedBg({required this.accent, required this.pulse});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: pulse,
+      builder: (context, _) {
+        final wave = sin(pulse.value * pi * 2) * 0.03;
+        return Container(
+          decoration: BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment(0, 0.6 + wave),
+              radius: 1.4,
+              colors: [
+                Color.lerp(
+                    const Color(0xFF0A0A0A), accent, 0.06 + wave)!,
+                const Color(0xFF050505),
+                Colors.black,
+              ],
+              stops: const [0.0, 0.5, 1.0],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Physics particle painter
+// ---------------------------------------------------------------------------
+
+class _PhysicsParticlePainter extends CustomPainter {
+  final List<_Particle> particles;
+  final Paint solidPaint;
+  final Paint glowPaint;
+  final double? podY;
+  final double podX;
+  final Color accentColor;
+  final bool orePhase;
+  final int frameCount;
+
+  _PhysicsParticlePainter({
+    required this.particles,
+    required this.solidPaint,
+    required this.glowPaint,
+    required this.podY,
+    required this.podX,
+    required this.accentColor,
+    required this.orePhase,
+    required this.frameCount,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..style = PaintingStyle.stroke;
-    final lineCount = 5 + (progress * 8).toInt();
+    for (final p in particles) {
+      if (p.life <= 0) continue;
 
-    for (int i = 0; i < lineCount; i++) {
-      final yBase = size.height * (0.1 + i * 0.08);
-      final y = yBase + sin(phase * pi * 2 + i * 1.5) * 15;
-      final alpha = (0.02 + 0.04 * sin(phase * pi * 2 + i)).clamp(0.0, 0.08);
+      final alpha = p.life.clamp(0.0, 1.0);
 
-      paint.color = accent.withValues(alpha: alpha);
-      paint.strokeWidth = 0.5 + sin(i * 0.8) * 0.3;
+      // Glow behind particle
+      glowPaint.color = p.color.withValues(alpha: 0.08 * alpha);
+      canvas.drawCircle(
+        Offset(p.x, p.y),
+        p.radius * 3,
+        glowPaint,
+      );
 
-      final path = Path();
-      path.moveTo(0, y);
-      for (double x = 0; x <= size.width; x += 20) {
-        final localY = y + sin(x * 0.005 + phase * pi * 2 + i) * 8;
-        path.lineTo(x, localY);
+      // Ore pulsing during oreMaturation
+      double effectiveAlpha = alpha;
+      if (orePhase && p.type == _typeOre) {
+        final pulse = (sin(frameCount * 0.15 + p.x * 0.1) + 1) * 0.5;
+        effectiveAlpha = (0.5 + 0.5 * pulse).clamp(0.0, 1.0);
+        // Extra bright glow
+        glowPaint.color = p.color.withValues(alpha: 0.2 * pulse);
+        canvas.drawCircle(
+          Offset(p.x, p.y),
+          p.radius * 5,
+          glowPaint,
+        );
       }
-      canvas.drawPath(path, paint);
+
+      // Solid circle
+      solidPaint.color = p.color.withValues(alpha: effectiveAlpha);
+      canvas.drawCircle(
+        Offset(p.x, p.y),
+        p.radius,
+        solidPaint,
+      );
+
+      // Specular highlight for ores and magma
+      if ((p.type == _typeOre || p.type == _typeMagma) && p.radius > 2) {
+        solidPaint.color = Colors.white.withValues(alpha: 0.25 * effectiveAlpha);
+        canvas.drawCircle(
+          Offset(p.x - p.radius * 0.25, p.y - p.radius * 0.25),
+          p.radius * 0.35,
+          solidPaint,
+        );
+      }
+    }
+
+    // Draw pod during worldReady
+    if (podY != null) {
+      _drawPod(canvas, podX, podY!);
+    }
+  }
+
+  void _drawPod(Canvas canvas, double x, double y) {
+    // Tiny pod silhouette: a rounded trapezoid shape
+    final podPaint = Paint()
+      ..color = accentColor.withValues(alpha: 0.9)
+      ..style = PaintingStyle.fill;
+
+    // Glow beneath pod
+    glowPaint.color = accentColor.withValues(alpha: 0.15);
+    canvas.drawCircle(Offset(x, y + 4), 14, glowPaint);
+
+    // Body (rounded rect)
+    final bodyRect = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: Offset(x, y), width: 12, height: 16),
+      const Radius.circular(3),
+    );
+    canvas.drawRRect(bodyRect, podPaint);
+
+    // Drill tip
+    final drillPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.7)
+      ..style = PaintingStyle.fill;
+    final drillPath = Path()
+      ..moveTo(x - 3, y + 8)
+      ..lineTo(x + 3, y + 8)
+      ..lineTo(x, y + 14)
+      ..close();
+    canvas.drawPath(drillPath, drillPaint);
+
+    // Exhaust particles (small dots above pod)
+    final exhaustPaint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.3)
+      ..style = PaintingStyle.fill;
+    final rng = Random(frameCount);
+    for (int i = 0; i < 3; i++) {
+      final ex = x + (rng.nextDouble() - 0.5) * 8;
+      final ey = y - 10 - rng.nextDouble() * 12;
+      canvas.drawCircle(Offset(ex, ey), 1.0 + rng.nextDouble(), exhaustPaint);
     }
   }
 
   @override
-  bool shouldRepaint(_StrataLinesPainter old) => true;
+  bool shouldRepaint(_PhysicsParticlePainter old) => true;
 }
 
-/// Custom progress bar with rounded ends and optional glow.
+// ---------------------------------------------------------------------------
+// Progress bar painter (preserved from original)
+// ---------------------------------------------------------------------------
+
 class _ProgressBarPainter extends CustomPainter {
   final double progress;
   final Color color;

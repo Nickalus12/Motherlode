@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/utils/noise_utils.dart';
 import 'package:motherlode/world/terrain_cell.dart';
 
 /// Depth-banded biome definitions
@@ -135,13 +136,33 @@ class BiomeRegistry {
     hell,
   ];
 
-  /// Get the biome for a given depth in feet
+  /// Get the biome for a given depth in feet (depth-only, no horizontal variation).
   static Biome getBiomeAtDepth(double depthFeet) {
     if (depthFeet < 0) return surface;
     for (final biome in allBiomes) {
       if (biome.containsDepth(depthFeet)) return biome;
     }
     return hell; // Default to hell for extreme depths
+  }
+
+  /// Maximum depth offset applied by horizontal biome noise (in feet).
+  static const double _biomeNoiseAmplitude = 150.0;
+
+  /// Get the biome at a world position, applying 2D noise to shift biome
+  /// boundaries horizontally so they are not perfectly flat stripes.
+  static Biome getBiomeAtPosition(double depthFeet, double worldX, int seed) {
+    if (depthFeet < 0) return surface;
+    final noise = NoiseUtils.sampleMultiOctave(
+      seed: seed + 55555,
+      x: worldX,
+      y: depthFeet * 0.1,
+      octaves: 3,
+      frequency: 0.008,
+      gain: 0.5,
+    );
+    final offset = (noise - 0.5) * 2.0 * _biomeNoiseAmplitude;
+    final adjustedDepth = depthFeet + offset;
+    return getBiomeAtDepth(adjustedDepth);
   }
 
   /// Get biome name as display string

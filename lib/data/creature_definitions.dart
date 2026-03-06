@@ -1,3 +1,5 @@
+import 'dart:math';
+
 /// Creature spawn depth bands and stats
 class CreatureSpawnInfo {
   final String name;
@@ -95,8 +97,13 @@ class CreatureDefinitions {
         .toList();
   }
 
-  /// Select a creature type for spawning based on depth
-  static CreatureSpawnInfo? selectCreatureForSpawn(double depthFeet) {
+  /// Select a creature type for spawning based on depth.
+  ///
+  /// [rng] should be a properly seeded [Random] instance (e.g. from world seed).
+  static CreatureSpawnInfo? selectCreatureForSpawn(
+    double depthFeet,
+    Random rng,
+  ) {
     final available = getCreaturesAtDepth(depthFeet);
     if (available.isEmpty) return null;
 
@@ -106,7 +113,7 @@ class CreatureDefinitions {
       totalChance += c.spawnChance;
     }
 
-    double roll = totalChance * (DateTime.now().microsecond / 1000000);
+    double roll = totalChance * rng.nextDouble();
     for (final c in available) {
       roll -= c.spawnChance;
       if (roll <= 0) return c;

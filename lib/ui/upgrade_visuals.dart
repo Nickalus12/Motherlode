@@ -165,7 +165,8 @@ class _FuelTankPainter extends CustomPainter {
     }
 
     // Level label
-    _drawLabel(canvas, size, _fuelTankNames[level.clamp(0, _fuelTankNames.length - 1)]);
+    _drawLabel(canvas, size,
+        _fuelTankNames[level.clamp(0, _fuelTankNames.length - 1)]);
   }
 
   static const _fuelTankNames = [
@@ -263,8 +264,10 @@ class _HullPainter extends CustomPainter {
     final sh = 50.0 + level * 3.0;
     shieldPath.moveTo(cx, cy - sh / 2);
     shieldPath.quadraticBezierTo(cx + sw / 2, cy - sh / 2 + 5, cx + sw / 2, cy);
-    shieldPath.quadraticBezierTo(cx + sw / 2 - 5, cy + sh / 2 - 10, cx, cy + sh / 2);
-    shieldPath.quadraticBezierTo(cx - sw / 2 + 5, cy + sh / 2 - 10, cx - sw / 2, cy);
+    shieldPath.quadraticBezierTo(
+        cx + sw / 2 - 5, cy + sh / 2 - 10, cx, cy + sh / 2);
+    shieldPath.quadraticBezierTo(
+        cx - sw / 2 + 5, cy + sh / 2 - 10, cx - sw / 2, cy);
     shieldPath.quadraticBezierTo(cx - sw / 2, cy - sh / 2 + 5, cx, cy - sh / 2);
     shieldPath.close();
 
@@ -437,7 +440,8 @@ class _EnginePainter extends CustomPainter {
     final blockW = 40.0 + level * 2.5;
     final blockH = 30.0 + level * 2.0;
     final blockRect = RRect.fromRectAndRadius(
-      Rect.fromCenter(center: Offset(cx, cy - 5), width: blockW, height: blockH),
+      Rect.fromCenter(
+          center: Offset(cx, cy - 5), width: blockW, height: blockH),
       const Radius.circular(4),
     );
 
@@ -561,7 +565,8 @@ class _EnginePainter extends CustomPainter {
     )..layout();
     tp.paint(canvas, Offset(cx - tp.width / 2, cy - tp.height / 2 - 5));
 
-    _drawLabel(canvas, size, _engineNames[level.clamp(0, _engineNames.length - 1)]);
+    _drawLabel(
+        canvas, size, _engineNames[level.clamp(0, _engineNames.length - 1)]);
   }
 
   static const _engineNames = [
@@ -757,7 +762,8 @@ class _RadiatorPainter extends CustomPainter {
       }
     }
 
-    _drawLabel(canvas, size, _radiatorNames[level.clamp(0, _radiatorNames.length - 1)]);
+    _drawLabel(canvas, size,
+        _radiatorNames[level.clamp(0, _radiatorNames.length - 1)]);
   }
 
   static const _radiatorNames = [
@@ -894,7 +900,8 @@ class _CargoBayPainter extends CustomPainter {
         const Color(0xFFCC6633),
         fillPercent,
       )!;
-      canvas.drawRect(fillRect, Paint()..color = fillColor.withValues(alpha: 0.5));
+      canvas.drawRect(
+          fillRect, Paint()..color = fillColor.withValues(alpha: 0.5));
 
       // Ore chunks inside
       final rng = Random(13);
@@ -910,7 +917,8 @@ class _CargoBayPainter extends CustomPainter {
           const Color(0xFF00CC66),
         ];
         canvas.drawRect(
-          Rect.fromCenter(center: Offset(ox, oy), width: oreSize, height: oreSize),
+          Rect.fromCenter(
+              center: Offset(ox, oy), width: oreSize, height: oreSize),
           Paint()..color = oreColors[i % oreColors.length],
         );
       }
@@ -960,7 +968,8 @@ class _CargoBayPainter extends CustomPainter {
       );
     }
 
-    _drawLabel(canvas, size, _cargoNames[level.clamp(0, _cargoNames.length - 1)]);
+    _drawLabel(
+        canvas, size, _cargoNames[level.clamp(0, _cargoNames.length - 1)]);
   }
 
   static const _cargoNames = [
@@ -1085,8 +1094,7 @@ class _DrillVisualWidgetState extends State<DrillVisualWidget>
                     borderRadius: BorderRadius.circular(3),
                   ),
                   child: Text(
-                    _drillNames[
-                        widget.level.clamp(0, _drillNames.length - 1)],
+                    _drillNames[widget.level.clamp(0, _drillNames.length - 1)],
                     style: TextStyle(
                       color: glowColor,
                       fontSize: 9,

@@ -11,6 +11,7 @@ import 'package:motherlode/utils/constants.dart';
 /// - Angular damping: 5.0 (no spinning)
 /// - Fixture: rounded rectangle shape matching pod bounds
 class PodBody extends BodyComponent with ContactCallbacks {
+  @override
   final MotherlodeGame game;
   late final double _width;
   late final double _height;
@@ -39,13 +40,12 @@ class PodBody extends BodyComponent with ContactCallbacks {
     final body = world.createBody(bodyDef);
 
     // Create pod shape as a polygon (rounded rect approximation)
-    final shape = PolygonShape()
-      ..setAsBoxXY(_width / 2, _height / 2);
+    final shape = PolygonShape()..setAsBoxXY(_width / 2, _height / 2);
 
     body.createFixture(FixtureDef(shape)
       ..density = _calculateDensity()
-      ..friction = 0.5
-      ..restitution = 0.1
+      ..friction = 0.6
+      ..restitution = 0.0
       ..userData = this);
 
     // Add a sensor at the bottom for ground detection
@@ -67,8 +67,8 @@ class PodBody extends BodyComponent with ContactCallbacks {
   /// Calculate density to achieve desired mass
   double _calculateDensity() {
     final area = _width * _height;
-    final totalMass = GameConstants.podBaseMass +
-        game.pod.cargoSystem.currentWeight;
+    final totalMass =
+        GameConstants.podBaseMass + game.pod.cargoSystem.currentWeight;
     return totalMass / area;
   }
 
@@ -78,8 +78,8 @@ class PodBody extends BodyComponent with ContactCallbacks {
     final fixture = body.fixtures.first;
     final newDef = FixtureDef(fixture.shape)
       ..density = _calculateDensity()
-      ..friction = 0.5
-      ..restitution = 0.1
+      ..friction = 0.6
+      ..restitution = 0.0
       ..userData = this;
 
     body.destroyFixture(fixture);

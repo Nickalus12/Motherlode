@@ -24,6 +24,7 @@ class _MainMenuState extends State<MainMenu> with TickerProviderStateMixin {
   late final AnimationController _particleController;
   late final AnimationController _titleGlowController;
   late final AnimationController _subtitleController;
+  late final AnimationController _buttonsController;
 
   @override
   void initState() {
@@ -42,6 +43,15 @@ class _MainMenuState extends State<MainMenu> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     )..forward();
+
+    _buttonsController = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
+    // Stagger buttons entrance after subtitle finishes
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (mounted) _buttonsController.forward();
+    });
   }
 
   @override
@@ -49,6 +59,7 @@ class _MainMenuState extends State<MainMenu> with TickerProviderStateMixin {
     _particleController.dispose();
     _titleGlowController.dispose();
     _subtitleController.dispose();
+    _buttonsController.dispose();
     super.dispose();
   }
 
@@ -190,8 +201,8 @@ class _MainMenuState extends State<MainMenu> with TickerProviderStateMixin {
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.amber
-                                    .withValues(alpha: 0.3 * glow),
+                                color:
+                                    Colors.amber.withValues(alpha: 0.3 * glow),
                                 blurRadius: 10,
                                 spreadRadius: 1,
                               ),
@@ -233,27 +244,46 @@ class _MainMenuState extends State<MainMenu> with TickerProviderStateMixin {
 
                 const Spacer(flex: 1),
 
-                // Menu buttons with labels
-                _MenuButton(
-                  label: 'NEW GAME',
-                  color: Colors.amber,
-                  icon: Icons.play_arrow,
-                  onTap: widget.onNewGame,
-                  isPrimary: true,
-                ),
-                const SizedBox(height: 14),
-                _MenuButton(
-                  label: 'LOAD GAME',
-                  color: Colors.cyan,
-                  icon: Icons.save,
-                  onTap: widget.onLoadGame,
-                ),
-                const SizedBox(height: 14),
-                _MenuButton(
-                  label: 'LEADERBOARD',
-                  color: Colors.green,
-                  icon: Icons.leaderboard,
-                  onTap: () => _showLeaderboard(context),
+                // Menu buttons with staggered fade-in
+                FadeTransition(
+                  opacity: CurvedAnimation(
+                    parent: _buttonsController,
+                    curve: Curves.easeOut,
+                  ),
+                  child: SlideTransition(
+                    position: Tween<Offset>(
+                      begin: const Offset(0, 0.2),
+                      end: Offset.zero,
+                    ).animate(CurvedAnimation(
+                      parent: _buttonsController,
+                      curve: Curves.easeOut,
+                    )),
+                    child: Column(
+                      children: [
+                        _MenuButton(
+                          label: 'NEW GAME',
+                          color: Colors.amber,
+                          icon: Icons.play_arrow,
+                          onTap: widget.onNewGame,
+                          isPrimary: true,
+                        ),
+                        const SizedBox(height: 14),
+                        _MenuButton(
+                          label: 'LOAD GAME',
+                          color: Colors.cyan,
+                          icon: Icons.save,
+                          onTap: widget.onLoadGame,
+                        ),
+                        const SizedBox(height: 14),
+                        _MenuButton(
+                          label: 'LEADERBOARD',
+                          color: Colors.green,
+                          icon: Icons.leaderboard,
+                          onTap: () => _showLeaderboard(context),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
 
                 const Spacer(flex: 2),
@@ -351,8 +381,8 @@ class _MainMenuState extends State<MainMenu> with TickerProviderStateMixin {
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.04),
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.1)),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.1)),
                   ),
                   child: Text(
                     'CLOSE',
@@ -460,16 +490,14 @@ class _MenuButtonState extends State<_MenuButton>
                 children: [
                   Icon(
                     widget.icon,
-                    color:
-                        widget.color.withValues(alpha: 0.6 + pulse * 0.3),
+                    color: widget.color.withValues(alpha: 0.6 + pulse * 0.3),
                     size: 22,
                   ),
                   const SizedBox(width: 12),
                   Text(
                     widget.label,
                     style: TextStyle(
-                      color: widget.color
-                          .withValues(alpha: 0.7 + pulse * 0.3),
+                      color: widget.color.withValues(alpha: 0.7 + pulse * 0.3),
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                       letterSpacing: 3,
@@ -549,8 +577,8 @@ class _GeologicalLinesPainter extends CustomPainter {
     for (int i = 0; i < 8; i++) {
       final y = size.height * (0.15 + i * 0.1);
       final yOffset = sin(phase * pi * 2 + i * 1.3) * 10;
-      final alpha = (0.02 + 0.02 * sin(phase * pi * 2 + i * 0.8))
-          .clamp(0.0, 0.05);
+      final alpha =
+          (0.02 + 0.02 * sin(phase * pi * 2 + i * 0.8)).clamp(0.0, 0.05);
 
       paint.color = Colors.amber.withValues(alpha: alpha);
 

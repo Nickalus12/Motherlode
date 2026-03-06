@@ -1,6 +1,5 @@
 import 'dart:ui' as ui;
 
-import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 
 import 'package:motherlode/utils/constants.dart';
@@ -205,9 +204,8 @@ class Chunk extends BodyComponent {
     return {
       'cx': chunkX,
       'cy': chunkY,
-      'cells': cells
-          .map((row) => row.map((cell) => cell.toMap()).toList())
-          .toList(),
+      'cells':
+          cells.map((row) => row.map((cell) => cell.toMap()).toList()).toList(),
     };
   }
 }

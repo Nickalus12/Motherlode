@@ -8,16 +8,22 @@ import 'package:flutter/material.dart';
 import 'package:motherlode/entities/pod/pod.dart';
 import 'package:motherlode/entities/pod/pod_controller.dart';
 import 'package:motherlode/physics/debris_body.dart';
-import 'package:motherlode/rendering/depth_fog.dart';
 import 'package:motherlode/rendering/lighting_system.dart';
+import 'package:motherlode/physics/sdf_collision.dart';
 import 'package:motherlode/rendering/parallax_background.dart';
 import 'package:motherlode/rendering/particle_system.dart';
+import 'package:motherlode/rendering/shader_background.dart';
+import 'package:motherlode/rendering/shader_terrain_renderer.dart';
 import 'package:motherlode/rendering/terrain_renderer.dart';
+import 'package:motherlode/systems/camera_system.dart';
 import 'package:motherlode/systems/depth_system.dart';
 import 'package:motherlode/systems/fuel_system.dart';
 import 'package:motherlode/systems/hull_system.dart';
+import 'package:motherlode/systems/creature_spawner.dart';
 import 'package:motherlode/systems/earthquake_system.dart';
 import 'package:motherlode/rendering/item_sprite_manager.dart';
+import 'package:motherlode/systems/audio_manager.dart';
+import 'package:motherlode/utils/debug_log.dart';
 import 'package:motherlode/utils/perf_monitor.dart';
 import 'package:motherlode/world/ore_registry.dart';
 import 'package:motherlode/world/chunk_manager.dart';
@@ -65,11 +71,16 @@ class MotherlodeGame extends Forge2DGame
   late final EarthquakeSystem earthquakeSystem;
   late final LightingSystem lightingSystem;
   late final ParticleSystem particleSystem;
-  late final DepthFog depthFog;
   late final DebrisManager debrisManager;
   late final PerfMonitor perfMonitor;
-  late final TerrainRenderer terrainRenderer;
-  late final ParallaxBackground parallaxBackground;
+  TerrainRenderer? terrainRenderer;
+  ParallaxBackground? parallaxBackground;
+  late final ShaderTerrainRenderer shaderTerrainRenderer;
+  late final ShaderBackground shaderBackground;
+  late final SdfCollisionSystem sdfCollisionSystem;
+  late final CreatureSpawner creatureSpawner;
+  late final AudioManager audioManager;
+  late final CameraSystem cameraSystem;
 
   // Player state
   double playerCash = GameConstants.startingCash;
@@ -88,9 +99,13 @@ class MotherlodeGame extends Forge2DGame
   int teleporterCount = 0;
   int transmitterCount = 0;
 
+  // Collectibles
+  int ancientScrollCount = 0;
+
   // Game state
   bool isAtSurface = true;
   bool isGameOver = false;
+  bool usingCpuFallback = false;
   int _seed = 0;
 
   @override
@@ -119,22 +134,55 @@ class MotherlodeGame extends Forge2DGame
     earthquakeSystem = EarthquakeSystem(game: this);
     lightingSystem = LightingSystem();
     particleSystem = ParticleSystem();
-    depthFog = DepthFog();
     debrisManager = DebrisManager();
     perfMonitor = PerfMonitor();
-    terrainRenderer = TerrainRenderer();
-    parallaxBackground = ParallaxBackground();
+    shaderTerrainRenderer = ShaderTerrainRenderer();
+    shaderBackground = ShaderBackground();
+    sdfCollisionSystem = SdfCollisionSystem();
+    creatureSpawner = CreatureSpawner(seed: worldSeed);
+    audioManager = AudioManager();
+    cameraSystem = CameraSystem();
 
     // Preload ore sprite sheets for terrain rendering
-    final oreSpritePaths = OreRegistry.allOres
-        .map((ore) => ore.spritePath)
-        .whereType<String>();
+    final oreSpritePaths =
+        OreRegistry.allOres.map((ore) => ore.spritePath).whereType<String>();
     await ItemSpriteManager.instance.preloadAll(oreSpritePaths);
 
-    // Add components to world
-    world.add(parallaxBackground);
+    // Add shader renderers and await their loading so we can check compile status
+    await world.add(shaderBackground);
     await world.add(chunkManager);
-    world.add(terrainRenderer);
+    await world.add(shaderTerrainRenderer);
+
+    // Fall back to CPU renderers if shaders failed to compile
+    DebugLog.info(
+        'Game',
+        'Background: ready=${shaderBackground.shaderReady} '
+            'time=${shaderBackground.compilationTimeMs}ms '
+            'error=${shaderBackground.shaderError ?? "none"}');
+    DebugLog.info(
+        'Game',
+        'Terrain: ready=${shaderTerrainRenderer.shaderReady} '
+            'time=${shaderTerrainRenderer.compilationTimeMs}ms '
+            'error=${shaderTerrainRenderer.shaderError ?? "none"}');
+    if (!shaderBackground.shaderReady) {
+      DebugLog.warn(
+          'Game', 'Background shader unavailable, using CPU fallback');
+      parallaxBackground = ParallaxBackground();
+      world.add(parallaxBackground!);
+    }
+    if (!shaderTerrainRenderer.shaderReady) {
+      DebugLog.warn('Game', 'Terrain shader unavailable, using CPU fallback');
+      terrainRenderer = TerrainRenderer();
+      world.add(terrainRenderer!);
+    }
+    usingCpuFallback =
+        !shaderBackground.shaderReady || !shaderTerrainRenderer.shaderReady;
+    if (usingCpuFallback) {
+      DebugLog.warn('Game', 'Running with CPU fallback rendering');
+    } else {
+      DebugLog.info(
+          'Game', 'GPU shaders active for both background and terrain');
+    }
 
     // Force-load terrain chunks around spawn and await their bodies.
     // If genesis data was preloaded, forceLoadAroundSpawn picks it up
@@ -156,10 +204,12 @@ class MotherlodeGame extends Forge2DGame
     world.add(earthquakeSystem);
     world.add(particleSystem);
     world.add(debrisManager);
+    world.add(sdfCollisionSystem);
+    world.add(creatureSpawner);
+    world.add(audioManager);
 
     // Add render overlays (camera-relative)
     camera.viewport.add(lightingSystem);
-    camera.viewport.add(depthFog);
     camera.viewport.add(perfMonitor);
 
     // Wait for pod to be ready before camera follow
@@ -168,7 +218,8 @@ class MotherlodeGame extends Forge2DGame
     } catch (_) {
       // Pod may still work with fallback rendering
     }
-    camera.follow(pod);
+    // CameraSystem handles follow + look-ahead + dynamic zoom
+    world.add(cameraSystem);
 
     // Notify that loading is complete
     onReady?.call();
@@ -210,6 +261,7 @@ class MotherlodeGame extends Forge2DGame
   bool spendCash(double amount) {
     if (playerCash < amount) return false;
     playerCash -= amount;
+    audioManager.playPurchase();
     return true;
   }
 

@@ -21,7 +21,7 @@ class CollapseDetector {
   /// Returns list of cells that should collapse
   List<CollapseCell> checkCollapse(int centerX, int centerY) {
     final collapseCells = <CollapseCell>[];
-    final radius = GameConstants.collapseCheckRadius;
+    const radius = GameConstants.collapseCheckRadius;
 
     for (int dy = -radius; dy <= radius; dy++) {
       for (int dx = -radius; dx <= radius; dx++) {

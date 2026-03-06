@@ -2,8 +2,6 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:motherlode/utils/constants.dart';
-import 'package:motherlode/world/terrain_cell.dart';
 
 /// Tests for chunk dirty flag / cached picture system.
 /// Since TerrainRenderer requires a running Flame game with Canvas,
@@ -42,29 +40,26 @@ void main() {
   test('3. Only renders once after one cell removal', () {
     int renderCount = 0;
     bool isDirty = true;
-    Object? cachedPicture;
 
     // First render (chunk was dirty from creation)
     if (isDirty) {
       renderCount++;
-      cachedPicture = 'picture_v1';
       isDirty = false;
     }
     expect(renderCount, equals(1));
 
     // Remove a cell
     isDirty = true;
-    cachedPicture = null;
 
     // Render call 1 after removal
     if (isDirty) {
       renderCount++;
-      cachedPicture = 'picture_v2';
       isDirty = false;
     }
     expect(renderCount, equals(2));
 
     // Render call 2 after removal (should use cache)
+    // ignore: dead_code
     if (isDirty) {
       renderCount++;
     }

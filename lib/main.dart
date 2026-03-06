@@ -8,9 +8,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
 import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/persistence/save_manager.dart';
 import 'package:motherlode/ui/genesis_screen.dart';
 import 'package:motherlode/ui/hud.dart';
 import 'package:motherlode/ui/main_menu.dart';
+import 'package:motherlode/ui/tutorial_overlay.dart';
 import 'package:motherlode/utils/constants.dart';
 import 'package:motherlode/world/genesis_pipeline.dart';
 
@@ -27,6 +29,7 @@ void main() async {
 
   // Initialize Hive for persistence
   await Hive.initFlutter();
+  await SaveManager.init();
 
   runApp(
     const ProviderScope(
@@ -65,6 +68,8 @@ class _MotherlodeGameScreenState extends ConsumerState<MotherlodeGameScreen> {
   GameScreenState _screenState = GameScreenState.mainMenu;
   MotherlodeGame? _game;
   StreamController<(GenesisPhase, double)>? _genesisProgressController;
+  bool _showTutorial = false;
+  bool _tutorialChecked = false;
 
   /// Key to preserve the GameWidget across genesis → playing transition,
   /// avoiding a detach/re-attach cycle on the game instance.
@@ -93,15 +98,34 @@ class _MotherlodeGameScreenState extends ConsumerState<MotherlodeGameScreen> {
         // Bridge pipeline progress to the genesis screen stream
         _genesisProgressController?.add((phase, progress));
       },
+      onError: (phase, error, isFatal) {
+        print('[Genesis] Phase ${GenesisPipeline.phaseLabel(phase)} '
+            '${isFatal ? "FATAL" : "skipped"}: $error');
+      },
     );
 
-    // Run world generation (phases report progress to genesis screen)
-    final result = await pipeline.generateWorld(
-      chunkRadiusX: GameConstants.chunkLoadRadius,
-      chunkRadiusY: GameConstants.chunkLoadRadius * 2,
-    );
+    GenesisResult result;
+    try {
+      result = await pipeline.generateWorld(
+        chunkRadiusX: GameConstants.chunkLoadRadius,
+        chunkRadiusY: GameConstants.chunkLoadRadius * 2,
+      );
+    } catch (e) {
+      // Fatal phase failure — return to main menu
+      print('[Genesis] World generation failed fatally: $e');
+      if (!mounted) return;
+      setState(() {
+        _screenState = GameScreenState.mainMenu;
+      });
+      return;
+    }
 
     if (!mounted) return;
+
+    if (result.hasDegradedPhases) {
+      print('[Genesis] World generated with degraded phases: '
+          '${result.failedPhases.map(GenesisPipeline.phaseLabel).join(", ")}');
+    }
 
     // Create game with pre-generated world data
     final game = MotherlodeGame(
@@ -132,6 +156,16 @@ class _MotherlodeGameScreenState extends ConsumerState<MotherlodeGameScreen> {
       });
       _genesisProgressController?.close();
       _genesisProgressController = null;
+
+      // Check if tutorial should be shown (first launch)
+      if (!_tutorialChecked) {
+        _tutorialChecked = true;
+        TutorialOverlay.hasCompleted().then((done) {
+          if (!done && mounted) {
+            setState(() => _showTutorial = true);
+          }
+        });
+      }
     }
   }
 
@@ -147,6 +181,8 @@ class _MotherlodeGameScreenState extends ConsumerState<MotherlodeGameScreen> {
     setState(() {
       _game = null;
       _screenState = GameScreenState.mainMenu;
+      _showTutorial = false;
+      _tutorialChecked = false;
     });
   }
 
@@ -194,7 +230,14 @@ class _MotherlodeGameScreenState extends ConsumerState<MotherlodeGameScreen> {
               game: _game!,
               loadingBuilder: (_) => const SizedBox.shrink(),
             ),
-            HudOverlay(game: _game!),
+            HudOverlay(game: _game!, onReturnToMenu: _returnToMenu),
+            if (_showTutorial)
+              TutorialOverlay(
+                game: _game!,
+                onDismiss: () {
+                  if (mounted) setState(() => _showTutorial = false);
+                },
+              ),
           ],
         );
 
@@ -266,7 +309,7 @@ class _MotherlodeGameScreenState extends ConsumerState<MotherlodeGameScreen> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.arrow_downward,
+                        const Icon(Icons.arrow_downward,
                             color: Colors.white54, size: 18),
                         const SizedBox(width: 8),
                         Text(
@@ -280,7 +323,7 @@ class _MotherlodeGameScreenState extends ConsumerState<MotherlodeGameScreen> {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.monetization_on,
+                        const Icon(Icons.monetization_on,
                             color: Colors.amber, size: 18),
                         const SizedBox(width: 8),
                         Text(
@@ -317,8 +360,7 @@ class _MotherlodeGameScreenState extends ConsumerState<MotherlodeGameScreen> {
                     ],
                   ),
                   borderRadius: BorderRadius.circular(12),
-                  border:
-                      Border.all(color: Colors.red.withValues(alpha: 0.4)),
+                  border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.red.withValues(alpha: 0.2),
@@ -348,8 +390,8 @@ class _MotherlodeGameScreenState extends ConsumerState<MotherlodeGameScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.05),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.12)),
+                  border:
+                      Border.all(color: Colors.white.withValues(alpha: 0.12)),
                 ),
                 child: Text(
                   'MAIN MENU',
@@ -368,4 +410,3 @@ class _MotherlodeGameScreenState extends ConsumerState<MotherlodeGameScreen> {
     );
   }
 }
-

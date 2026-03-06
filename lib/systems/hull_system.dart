@@ -1,4 +1,5 @@
 import 'package:flame/components.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 
 import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/utils/constants.dart';
@@ -24,6 +25,10 @@ class HullSystem extends Component {
   // Lava/gas damage immunity after radiator upgrade
   double heatResistance = 0; // 0.0 to 1.0
 
+  // Hazard exposure state (for visual feedback in LightingSystem)
+  bool inLava = false;
+  bool inGas = false;
+
   HullSystem({required this.game});
 
   @override
@@ -33,9 +38,8 @@ class HullSystem extends Component {
   }
 
   /// Current hull as a ratio (0.0 to 1.0)
-  double get hullRatio => maxHull > 0
-      ? (currentHull / maxHull).clamp(0.0, 1.0)
-      : 0.0;
+  double get hullRatio =>
+      maxHull > 0 ? (currentHull / maxHull).clamp(0.0, 1.0) : 0.0;
 
   /// Whether hull is critically low
   bool get isLowHull => hullRatio < GameConstants.lowHullThreshold;
@@ -60,6 +64,7 @@ class HullSystem extends Component {
     currentHull = (currentHull - amount).clamp(0, maxHull);
     _lastDamageTime = 0;
     _totalDamageTaken += amount;
+    game.audioManager.playHullDamage();
 
     if (currentHull <= 0) {
       game.triggerGameOver();
@@ -81,6 +86,11 @@ class HullSystem extends Component {
     if (impactVelocity.abs() > threshold) {
       final damage = (impactVelocity.abs() - threshold) * 2;
       takeDamage(damage);
+      // Camera shake proportional to impact severity
+      final shakeIntensity =
+          ((impactVelocity.abs() - threshold) / 10.0).clamp(0.2, 0.8);
+      game.earthquakeSystem.startShake(shakeIntensity, 0.3);
+      HapticFeedback.mediumImpact();
     }
   }
 
@@ -106,6 +116,9 @@ class HullSystem extends Component {
 
   /// Check if pod is in contact with lava or gas
   void _checkHazardDamage(double dt) {
+    inLava = false;
+    inGas = false;
+
     if (game.isAtSurface) return;
 
     // Check cells around pod position for hazards
@@ -118,8 +131,11 @@ class HullSystem extends Component {
 
         // CellType.lava = 5, CellType.gas = 6
         if (cellType == 5) {
+          inLava = true;
+          game.audioManager.playLavaBurn();
           takeHeatDamage(GameConstants.lavaDamagePerSecond * dt);
         } else if (cellType == 6) {
+          inGas = true;
           takeHeatDamage(GameConstants.gasDamagePerSecond * dt);
         }
       }

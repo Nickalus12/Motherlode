@@ -4,6 +4,7 @@ import 'package:flame/components.dart';
 import 'package:flutter/foundation.dart';
 
 import 'package:motherlode/motherlode_game.dart';
+import 'package:motherlode/utils/debug_log.dart';
 
 /// Lightweight frame-time monitor — debug builds only.
 /// Tracks rolling average of frame time, chunk counts, body counts, etc.
@@ -52,6 +53,9 @@ class PerfMonitor extends Component with HasGameReference<MotherlodeGame> {
     final chunkManager = game.chunkManager;
     final particleSystem = game.particleSystem;
 
+    final bgShader = game.shaderBackground;
+    final terrainShader = game.shaderTerrainRenderer;
+
     final lines = [
       'FPS: ${averageFps.toStringAsFixed(1)}',
       'Frame: ${averageFrameTimeMs.toStringAsFixed(1)}ms',
@@ -59,12 +63,29 @@ class PerfMonitor extends Component with HasGameReference<MotherlodeGame> {
       'Particles: ${particleSystem.activeCount}/${particleSystem.pool.capacity}',
       'Render: ${_chunkRenderTime.toStringAsFixed(1)}ms',
       'Physics: ${_physicsUpdateTime.toStringAsFixed(1)}ms',
+      'BG Shader: ${bgShader.shaderReady ? "GPU (${bgShader.compilationTimeMs}ms)" : "CPU"}',
+      'Terrain Shader: ${terrainShader.shaderReady ? "GPU (${terrainShader.compilationTimeMs}ms)" : "CPU"}',
+      'Renderer: ${game.usingCpuFallback ? "CPU fallback" : "GPU"}',
     ];
+
+    // Append recent debug log entries
+    final recentLogs = DebugLog.recent(4);
+    if (recentLogs.isNotEmpty) {
+      lines.add('--- Recent Logs ---');
+      for (final entry in recentLogs) {
+        final lvl = entry.level.name.toUpperCase().substring(0, 1);
+        final msg = entry.message.length > 30
+            ? '${entry.message.substring(0, 30)}...'
+            : entry.message;
+        lines.add('$lvl [${entry.tag}] $msg');
+      }
+    }
 
     // Background
     final bgPaint = Paint()..color = const Color(0x80000000);
+    final panelHeight = 12.0 + lines.length * 13.0;
     canvas.drawRect(
-      const Rect.fromLTWH(0, 0, 180, 90),
+      Rect.fromLTWH(0, 0, 220, panelHeight),
       bgPaint,
     );
 

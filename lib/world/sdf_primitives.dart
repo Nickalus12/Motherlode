@@ -18,9 +18,12 @@ class SdfPrimitives {
   /// Axis-aligned box SDF: distance from point (px,py) to box centered at (cx,cy)
   /// with half-widths (hw,hh).
   static double box(
-    double px, double py,
-    double cx, double cy,
-    double hw, double hh,
+    double px,
+    double py,
+    double cx,
+    double cy,
+    double hw,
+    double hh,
   ) {
     final dx = (px - cx).abs() - hw;
     final dy = (py - cy).abs() - hh;
@@ -32,9 +35,12 @@ class SdfPrimitives {
   /// Capsule SDF: distance from point (px,py) to a line segment from (ax,ay)
   /// to (bx,by) with radius r. Useful for tunnels and veins.
   static double capsule(
-    double px, double py,
-    double ax, double ay,
-    double bx, double by,
+    double px,
+    double py,
+    double ax,
+    double ay,
+    double bx,
+    double by,
     double r,
   ) {
     final pax = px - ax, pay = py - ay;
@@ -48,9 +54,12 @@ class SdfPrimitives {
   /// Line segment SDF (zero-radius capsule): distance from point (px,py)
   /// to the nearest point on line segment from (ax,ay) to (bx,by).
   static double line(
-    double px, double py,
-    double ax, double ay,
-    double bx, double by,
+    double px,
+    double py,
+    double ax,
+    double ay,
+    double bx,
+    double by,
   ) {
     final pax = px - ax, pay = py - ay;
     final bax = bx - ax, bay = by - ay;

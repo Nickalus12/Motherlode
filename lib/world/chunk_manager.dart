@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flame/components.dart';
 import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/utils/constants.dart';
@@ -20,8 +22,17 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
   // Active chunks keyed by "chunkX,chunkY" string
   final Map<String, Chunk> _activeChunks = {};
 
-  // Cache of generated but unloaded chunk data
-  final Map<String, List<List<TerrainCell>>> _chunkDataCache = {};
+  // LRU cache of generated but unloaded chunk data.
+  // LinkedHashMap preserves access order; oldest entries are evicted first.
+  static const int _maxCacheSize = 200;
+  final LinkedHashMap<String, List<List<TerrainCell>>> _chunkDataCache =
+      LinkedHashMap<String, List<List<TerrainCell>>>();
+
+  // Keys of chunks that have been modified since genesis (drilled, etc.)
+  final Set<String> _modifiedChunks = {};
+
+  // Throttle: max chunks to load per frame to avoid jank
+  static const int _maxChunkLoadsPerFrame = 2;
 
   ChunkManager({
     required this.worldGenerator,
@@ -31,7 +42,9 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
   /// Pre-populate the chunk data cache with Genesis pipeline results.
   /// Called before forceLoadAroundSpawn() so chunks use pre-generated data.
   void preloadChunkData(Map<String, List<List<TerrainCell>>> genesisChunks) {
-    _chunkDataCache.addAll(genesisChunks);
+    for (final entry in genesisChunks.entries) {
+      _putCache(entry.key, entry.value);
+    }
   }
 
   @override
@@ -61,10 +74,13 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
       }
     }
 
-    // Load new chunks
+    // Load new chunks (throttled to avoid frame jank)
+    int chunksLoaded = 0;
     for (final key in neededChunks) {
       if (!_activeChunks.containsKey(key)) {
+        if (chunksLoaded >= _maxChunkLoadsPerFrame) break;
         _loadChunk(key);
+        chunksLoaded++;
       }
     }
 
@@ -102,8 +118,7 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
     final bottomChunk =
         _activeChunks[_chunkKey(chunk.chunkX, chunk.chunkY + 1)];
     final leftChunk = _activeChunks[_chunkKey(chunk.chunkX - 1, chunk.chunkY)];
-    final rightChunk =
-        _activeChunks[_chunkKey(chunk.chunkX + 1, chunk.chunkY)];
+    final rightChunk = _activeChunks[_chunkKey(chunk.chunkX + 1, chunk.chunkY)];
 
     // Also check cached chunk data for unloaded neighbors
     List<TerrainCell>? topRow = topChunk?.bottomRow;
@@ -113,21 +128,36 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
 
     // Fall back to cached data if neighbor chunk isn't active
     topRow ??= _getBorderFromCache(chunk.chunkX, chunk.chunkY - 1, 'bottom');
+    bottomRow ??= _getBorderFromCache(chunk.chunkX, chunk.chunkY + 1, 'top');
     leftCol ??= _getBorderFromCache(chunk.chunkX - 1, chunk.chunkY, 'right');
+    rightCol ??= _getBorderFromCache(chunk.chunkX + 1, chunk.chunkY, 'left');
 
-    // For chunks at/above surface, synthesize empty border if no data
-    final chunkWorldTopY = chunk.chunkY * GameConstants.chunkSize;
-    if (chunkWorldTopY >= 0 && topRow == null) {
-      // Chunk is at or below ground; the chunk above should have data,
-      // but if not available, assume empty (sky above ground)
-      if (chunk.chunkY == 0) {
-        // This chunk starts at worldY=0 (surface). Above is sky = empty.
-        topRow = List.generate(
-          GameConstants.chunkSize,
-          (_) => TerrainCell(type: CellType.empty, density: 0.0),
-        );
-      }
+    // Synthesize empty borders when no neighbor data is available
+    const size = GameConstants.chunkSize;
+
+    // Top: sky above surface chunk
+    if (topRow == null && chunk.chunkY == 0) {
+      topRow = List.generate(
+        size,
+        (_) => TerrainCell(type: CellType.empty, sdf: 1.0),
+      );
     }
+
+    // Bottom: assume solid terrain continues below
+    bottomRow ??= List.generate(
+      size,
+      (_) => TerrainCell(type: CellType.rock, sdf: -1.0),
+    );
+
+    // Left/Right: assume solid terrain continues laterally
+    leftCol ??= List.generate(
+      size,
+      (_) => TerrainCell(type: CellType.rock, sdf: -1.0),
+    );
+    rightCol ??= List.generate(
+      size,
+      (_) => TerrainCell(type: CellType.rock, sdf: -1.0),
+    );
 
     chunk.setBorderData(ChunkBorderData(
       topRow: topRow,
@@ -138,13 +168,13 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
   }
 
   /// Try to get a border row/col from cached (unloaded) chunk data
-  List<TerrainCell>? _getBorderFromCache(
-      int chunkX, int chunkY, String side) {
+  List<TerrainCell>? _getBorderFromCache(int chunkX, int chunkY, String side) {
     final key = _chunkKey(chunkX, chunkY);
     final cached = _chunkDataCache[key];
     if (cached == null) return null;
+    _touchCache(key);
 
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
     switch (side) {
       case 'top':
         return cached[0];
@@ -165,10 +195,11 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
     final cx = int.parse(parts[0]);
     final cy = int.parse(parts[1]);
 
-    // Get or generate chunk data
+    // Get or generate chunk data (remove from cache since it's now active)
     List<List<TerrainCell>> cellData;
-    if (_chunkDataCache.containsKey(key)) {
-      cellData = _chunkDataCache.remove(key)!;
+    final cached = _chunkDataCache.remove(key);
+    if (cached != null) {
+      cellData = cached;
     } else {
       cellData = worldGenerator.generateChunk(cx, cy);
     }
@@ -196,8 +227,7 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
       [-1, 0],
       [1, 0],
     ]) {
-      final neighbor =
-          _activeChunks[_chunkKey(cx + offset[0], cy + offset[1])];
+      final neighbor = _activeChunks[_chunkKey(cx + offset[0], cy + offset[1])];
       if (neighbor != null && !neighbor.isDirty) {
         neighbor.markDirty();
       }
@@ -208,8 +238,8 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
   void _unloadChunk(String key) {
     final chunk = _activeChunks.remove(key);
     if (chunk != null) {
-      // Cache the cell data for quick reload
-      _chunkDataCache[key] = chunk.cells;
+      // Cache the cell data for quick reload (LRU-managed)
+      _putCache(key, chunk.cells);
       chunk.removeFromParent();
     }
   }
@@ -223,20 +253,23 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
         ? gridY ~/ GameConstants.chunkSize
         : -(((-gridY - 1) ~/ GameConstants.chunkSize) + 1);
 
-    final localX = ((gridX % GameConstants.chunkSize) +
-            GameConstants.chunkSize) %
-        GameConstants.chunkSize;
-    final localY = ((gridY % GameConstants.chunkSize) +
-            GameConstants.chunkSize) %
-        GameConstants.chunkSize;
+    final localX =
+        ((gridX % GameConstants.chunkSize) + GameConstants.chunkSize) %
+            GameConstants.chunkSize;
+    final localY =
+        ((gridY % GameConstants.chunkSize) + GameConstants.chunkSize) %
+            GameConstants.chunkSize;
 
     final key = _chunkKey(chunkX, chunkY);
+    _modifiedChunks.add(key);
     final chunk = _activeChunks[key];
     if (chunk != null) {
       chunk.removeCell(localX, localY);
       // Also mark neighbors dirty if the removed cell is on a border
-      if (localX == 0 || localX == GameConstants.chunkSize - 1 ||
-          localY == 0 || localY == GameConstants.chunkSize - 1) {
+      if (localX == 0 ||
+          localX == GameConstants.chunkSize - 1 ||
+          localY == 0 ||
+          localY == GameConstants.chunkSize - 1) {
         _markNeighborsDirty(chunkX, chunkY);
       }
     } else {
@@ -261,19 +294,21 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
         ? gridY ~/ GameConstants.chunkSize
         : -(((-gridY - 1) ~/ GameConstants.chunkSize) + 1);
 
-    final localX = ((gridX % GameConstants.chunkSize) +
-            GameConstants.chunkSize) %
-        GameConstants.chunkSize;
-    final localY = ((gridY % GameConstants.chunkSize) +
-            GameConstants.chunkSize) %
-        GameConstants.chunkSize;
+    final localX =
+        ((gridX % GameConstants.chunkSize) + GameConstants.chunkSize) %
+            GameConstants.chunkSize;
+    final localY =
+        ((gridY % GameConstants.chunkSize) + GameConstants.chunkSize) %
+            GameConstants.chunkSize;
 
     final key = _chunkKey(chunkX, chunkY);
     final chunk = _activeChunks[key];
     if (chunk != null) {
       chunk.markDirty();
-      if (localX == 0 || localX == GameConstants.chunkSize - 1 ||
-          localY == 0 || localY == GameConstants.chunkSize - 1) {
+      if (localX == 0 ||
+          localX == GameConstants.chunkSize - 1 ||
+          localY == 0 ||
+          localY == GameConstants.chunkSize - 1) {
         _markNeighborsDirty(chunkX, chunkY);
       }
     }
@@ -344,14 +379,16 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
           dirtyChunks.add(_chunkKey(chunkX, chunkY));
 
           // Border cells also dirty the neighbor
-          final localX = ((gx % GameConstants.chunkSize) +
-                  GameConstants.chunkSize) %
-              GameConstants.chunkSize;
-          final localY = ((gy % GameConstants.chunkSize) +
-                  GameConstants.chunkSize) %
-              GameConstants.chunkSize;
-          if (localX == 0 || localX == GameConstants.chunkSize - 1 ||
-              localY == 0 || localY == GameConstants.chunkSize - 1) {
+          final localX =
+              ((gx % GameConstants.chunkSize) + GameConstants.chunkSize) %
+                  GameConstants.chunkSize;
+          final localY =
+              ((gy % GameConstants.chunkSize) + GameConstants.chunkSize) %
+                  GameConstants.chunkSize;
+          if (localX == 0 ||
+              localX == GameConstants.chunkSize - 1 ||
+              localY == 0 ||
+              localY == GameConstants.chunkSize - 1) {
             _markNeighborsDirty(chunkX, chunkY);
           }
         }
@@ -362,6 +399,7 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
     for (final key in dirtyChunks) {
       _activeChunks[key]?.markDirty();
     }
+    _modifiedChunks.addAll(dirtyChunks);
 
     return modified;
   }
@@ -375,12 +413,12 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
         ? gridY ~/ GameConstants.chunkSize
         : -(((-gridY - 1) ~/ GameConstants.chunkSize) + 1);
 
-    final localX = ((gridX % GameConstants.chunkSize) +
-            GameConstants.chunkSize) %
-        GameConstants.chunkSize;
-    final localY = ((gridY % GameConstants.chunkSize) +
-            GameConstants.chunkSize) %
-        GameConstants.chunkSize;
+    final localX =
+        ((gridX % GameConstants.chunkSize) + GameConstants.chunkSize) %
+            GameConstants.chunkSize;
+    final localY =
+        ((gridY % GameConstants.chunkSize) + GameConstants.chunkSize) %
+            GameConstants.chunkSize;
 
     final key = _chunkKey(chunkX, chunkY);
     final chunk = _activeChunks[key];
@@ -389,11 +427,10 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
       return cell?.type.index ?? CellType.empty.index;
     }
 
-    // Check cached data
+    // Check cached data (touch for LRU)
     final cached = _chunkDataCache[key];
-    if (cached != null &&
-        localY < cached.length &&
-        localX < cached[0].length) {
+    if (cached != null && localY < cached.length && localX < cached[0].length) {
+      _touchCache(key);
       return cached[localY][localX].type.index;
     }
 
@@ -409,12 +446,12 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
         ? gridY ~/ GameConstants.chunkSize
         : -(((-gridY - 1) ~/ GameConstants.chunkSize) + 1);
 
-    final localX = ((gridX % GameConstants.chunkSize) +
-            GameConstants.chunkSize) %
-        GameConstants.chunkSize;
-    final localY = ((gridY % GameConstants.chunkSize) +
-            GameConstants.chunkSize) %
-        GameConstants.chunkSize;
+    final localX =
+        ((gridX % GameConstants.chunkSize) + GameConstants.chunkSize) %
+            GameConstants.chunkSize;
+    final localY =
+        ((gridY % GameConstants.chunkSize) + GameConstants.chunkSize) %
+            GameConstants.chunkSize;
 
     final key = _chunkKey(chunkX, chunkY);
     final chunk = _activeChunks[key];
@@ -481,8 +518,9 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
     final cy = int.parse(parts[1]);
 
     List<List<TerrainCell>> cellData;
-    if (_chunkDataCache.containsKey(key)) {
-      cellData = _chunkDataCache.remove(key)!;
+    final cached = _chunkDataCache.remove(key);
+    if (cached != null) {
+      cellData = cached;
     } else {
       cellData = worldGenerator.generateChunk(cx, cy);
     }
@@ -493,6 +531,67 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
 
     await _game.world.add(chunk);
     await chunk.loaded;
+  }
+
+  /// Export all modified chunk cell data for saving.
+  ///
+  /// Returns both active and cached chunks that have been modified since
+  /// genesis. Unmodified chunks are skipped (they can be regenerated).
+  Map<String, List<List<TerrainCell>>> exportModifiedChunks() {
+    final result = <String, List<List<TerrainCell>>>{};
+    for (final key in _modifiedChunks) {
+      final chunk = _activeChunks[key];
+      if (chunk != null) {
+        result[key] = chunk.cells;
+      } else if (_chunkDataCache.containsKey(key)) {
+        result[key] = _chunkDataCache[key]!;
+      }
+    }
+    return result;
+  }
+
+  /// Import previously saved modified chunks into the data cache.
+  ///
+  /// Called before [forceLoadAroundSpawn] so loaded chunks use saved data.
+  /// Also marks imported keys as modified so subsequent saves include them.
+  void importModifiedChunks(Map<String, List<List<TerrainCell>>> chunks) {
+    for (final entry in chunks.entries) {
+      _putCache(entry.key, entry.value);
+    }
+    _modifiedChunks.addAll(chunks.keys);
+  }
+
+  /// Touch a cache entry to mark it as recently used (move to end of LinkedHashMap).
+  void _touchCache(String key) {
+    final data = _chunkDataCache.remove(key);
+    if (data != null) {
+      _chunkDataCache[key] = data;
+    }
+  }
+
+  /// Add data to the LRU cache, evicting oldest entries if over capacity.
+  /// Modified chunks are never evicted (they contain unsaved player changes).
+  void _putCache(String key, List<List<TerrainCell>> data) {
+    // Remove first so re-inserting puts it at the end (most recent)
+    _chunkDataCache.remove(key);
+    _chunkDataCache[key] = data;
+    _evictCache();
+  }
+
+  /// Evict oldest cache entries until at or below capacity.
+  void _evictCache() {
+    while (_chunkDataCache.length > _maxCacheSize) {
+      // Find the oldest entry that is NOT modified
+      String? toEvict;
+      for (final key in _chunkDataCache.keys) {
+        if (!_modifiedChunks.contains(key)) {
+          toEvict = key;
+          break;
+        }
+      }
+      if (toEvict == null) break; // All entries are modified, can't evict
+      _chunkDataCache.remove(toEvict);
+    }
   }
 
   String _chunkKey(int cx, int cy) => '$cx,$cy';

@@ -19,13 +19,13 @@ import 'package:motherlode/world/world_generator.dart';
 enum GenesisPhase {
   tectonicFormation, // Phase 1: Base SDF terrain from noise + stratigraphy
   volcanicIntrusion, // Phase 2: Magma intrusions via SDF ops
-  mineralSeeding,    // Phase 3: Reaction-diffusion ore placement
-  waterTableBirth,   // Phase 4: Fluid layer population
-  greatErosion,      // Phase 5: Hydraulic erosion (6 isolates)
-  caveNetworks,      // Phase 6: Cave refinement and smoothing
-  oreMaturation,     // Phase 7: Final ore distribution pass
+  mineralSeeding, // Phase 3: Reaction-diffusion ore placement
+  waterTableBirth, // Phase 4: Fluid layer population
+  greatErosion, // Phase 5: Hydraulic erosion (6 isolates)
+  caveNetworks, // Phase 6: Cave refinement and smoothing
+  oreMaturation, // Phase 7: Final ore distribution pass
   surfaceWeathering, // Phase 8: Surface detail and contour
-  worldReady,        // Phase 9: Complete
+  worldReady, // Phase 9: Complete
 }
 
 /// Progress callback for the Genesis cinematic load screen.
@@ -35,6 +35,17 @@ enum GenesisPhase {
 typedef GenesisProgressCallback = void Function(
   GenesisPhase phase,
   double progress,
+);
+
+/// Error callback for genesis phase failures.
+///
+/// [phase] is the phase that failed.
+/// [error] is the exception.
+/// [isFatal] is true if generation cannot continue.
+typedef GenesisErrorCallback = void Function(
+  GenesisPhase phase,
+  Object error,
+  bool isFatal,
 );
 
 /// Per-phase timing data for profiling.
@@ -84,14 +95,19 @@ class GenesisPipeline {
   final int seed;
   final Stratigraphy stratigraphy;
   final GenesisProgressCallback? onProgress;
+  final GenesisErrorCallback? onError;
 
   // Future subsystem references (plugged in during Task #7):
   // ErosionWorkerPool? erosionPool;
   // GrayScottSimulation? reactionDiffusion;
 
+  /// Phases that are fatal if they fail (world is unusable without them).
+  static const _fatalPhases = {GenesisPhase.tectonicFormation};
+
   GenesisPipeline({
     required this.seed,
     this.onProgress,
+    this.onError,
   }) : stratigraphy = Stratigraphy(seed: seed);
 
   /// Generate the full world terrain for a rectangular region of chunks.
@@ -105,52 +121,85 @@ class GenesisPipeline {
   }) async {
     final chunks = <String, List<List<TerrainCell>>>{};
     final timings = PhaseTimings();
+    final failedPhases = <GenesisPhase>[];
 
     // Run each phase with timing, yielding to UI thread between phases.
-    await _runPhase(GenesisPhase.tectonicFormation, timings, () =>
-        _phaseTectonicFormation(chunks, chunkRadiusX, chunkRadiusY));
+    // Fatal phases rethrow on failure; non-fatal phases log and skip.
+    await _runPhase(GenesisPhase.tectonicFormation, timings, failedPhases,
+        () => _phaseTectonicFormation(chunks, chunkRadiusX, chunkRadiusY));
 
-    await _runPhase(GenesisPhase.volcanicIntrusion, timings, () =>
-        _phaseVolcanicIntrusion(chunks, chunkRadiusX, chunkRadiusY));
+    await _runPhase(GenesisPhase.volcanicIntrusion, timings, failedPhases,
+        () => _phaseVolcanicIntrusion(chunks, chunkRadiusX, chunkRadiusY));
 
-    await _runPhase(GenesisPhase.mineralSeeding, timings, () =>
-        _phaseMineralSeeding(chunks, chunkRadiusX, chunkRadiusY));
+    await _runPhase(GenesisPhase.mineralSeeding, timings, failedPhases,
+        () => _phaseMineralSeeding(chunks, chunkRadiusX, chunkRadiusY));
 
-    await _runPhase(GenesisPhase.waterTableBirth, timings, () =>
-        _phaseWaterTableBirth(chunks, chunkRadiusX, chunkRadiusY));
+    await _runPhase(GenesisPhase.waterTableBirth, timings, failedPhases,
+        () => _phaseWaterTableBirth(chunks, chunkRadiusX, chunkRadiusY));
 
-    await _runPhase(GenesisPhase.greatErosion, timings, () =>
-        _phaseGreatErosion(chunks, chunkRadiusX, chunkRadiusY));
+    await _runPhase(GenesisPhase.greatErosion, timings, failedPhases,
+        () => _phaseGreatErosion(chunks, chunkRadiusX, chunkRadiusY));
 
-    await _runPhase(GenesisPhase.caveNetworks, timings, () =>
-        _phaseCaveNetworks(chunks, chunkRadiusX, chunkRadiusY));
+    await _runPhase(GenesisPhase.caveNetworks, timings, failedPhases,
+        () => _phaseCaveNetworks(chunks, chunkRadiusX, chunkRadiusY));
 
-    await _runPhase(GenesisPhase.oreMaturation, timings, () =>
-        _phaseOreMaturation(chunks, chunkRadiusX, chunkRadiusY));
+    await _runPhase(GenesisPhase.oreMaturation, timings, failedPhases,
+        () => _phaseOreMaturation(chunks, chunkRadiusX, chunkRadiusY));
 
-    await _runPhase(GenesisPhase.surfaceWeathering, timings, () =>
-        _phaseSurfaceWeathering(chunks, chunkRadiusX, chunkRadiusY));
+    await _runPhase(GenesisPhase.surfaceWeathering, timings, failedPhases,
+        () => _phaseSurfaceWeathering(chunks, chunkRadiusX, chunkRadiusY));
 
     _reportProgress(GenesisPhase.worldReady, 1.0);
 
-    return GenesisResult(chunks: chunks, timings: timings);
+    return GenesisResult(
+      chunks: chunks,
+      timings: timings,
+      failedPhases: failedPhases,
+    );
   }
 
   /// Yield to UI thread. Uses 1ms delay for reliable yielding on all platforms.
   static Future<void> _yieldToUI() =>
       Future<void>.delayed(const Duration(milliseconds: 1));
 
-  /// Run a single phase with timing and UI-thread yielding.
+  /// Run a single phase with timing, error handling, and UI-thread yielding.
+  ///
+  /// Fatal phases (see [_fatalPhases]) rethrow their error to abort generation.
+  /// Non-fatal phases catch errors, log them, report via [onError], and
+  /// continue so the player gets a playable (if degraded) world.
   Future<void> _runPhase(
     GenesisPhase phase,
     PhaseTimings timings,
+    List<GenesisPhase> failedPhases,
     Future<void> Function() work,
   ) async {
     // Yield to UI thread before starting (lets load screen render)
     await _yieldToUI();
 
     final sw = Stopwatch()..start();
-    await work();
+    try {
+      await work();
+    } catch (e, st) {
+      sw.stop();
+      timings.record(phase, sw.elapsedMilliseconds);
+
+      final isFatal = _fatalPhases.contains(phase);
+      final label = phaseLabel(phase);
+      print('[GenesisPipeline] Phase "$label" failed '
+          '(${isFatal ? "FATAL" : "non-fatal"}): $e\n$st');
+
+      failedPhases.add(phase);
+      onError?.call(phase, e, isFatal);
+
+      if (isFatal) {
+        rethrow;
+      }
+
+      // Non-fatal: skip to next phase, report this phase as complete
+      _reportProgress(phase, 1.0);
+      await _yieldToUI();
+      return;
+    }
     sw.stop();
 
     timings.record(phase, sw.elapsedMilliseconds);
@@ -199,7 +248,8 @@ class GenesisPipeline {
             );
 
             // Cave noise with biome-scaled influence
-            final biome = BiomeRegistry.getBiomeAtDepth(depthFeet);
+            final biome = BiomeRegistry.getBiomeAtPosition(
+                depthFeet, worldX.toDouble(), seed);
             final caveNoise = NoiseUtils.sampleCaveNoise(
               seed: seed,
               x: worldX.toDouble(),
@@ -596,7 +646,9 @@ class GenesisPipeline {
     for (int batch = 0; batch < totalBatches; batch++) {
       final count = min(batchSize, _totalDroplets - dropletsProcessed);
       erosion.erode(
-        sdf, gridWidth, gridHeight,
+        sdf,
+        gridWidth,
+        gridHeight,
         dropletCount: count,
         seed: seed + 55555 + batch * 31337,
         params: params,
@@ -946,8 +998,7 @@ class GenesisPipeline {
 
               if (oreNeighbors == 0) {
                 // Revert to solid terrain
-                final depthFeet =
-                    (cy * size + y) * GameConstants.feetPerTile;
+                final depthFeet = (cy * size + y) * GameConstants.feetPerTile;
                 final stratum = stratigraphy.getStratumAtPosition(
                   (cx * size + x).toDouble(),
                   depthFeet,
@@ -1142,10 +1193,11 @@ class GenesisPipeline {
         for (int y = 0; y < size; y++) {
           final worldY = worldStartY + y;
           final depthFeet = worldY * GameConstants.feetPerTile;
-          final biome = BiomeRegistry.getBiomeAtDepth(depthFeet);
 
           for (int x = 0; x < size; x++) {
             final worldX = worldStartX + x;
+            final biome = BiomeRegistry.getBiomeAtPosition(
+                depthFeet, worldX.toDouble(), seed);
             final cell = grid[y][x];
 
             if (biome.hasLava && cell.isSolid && cell.type != CellType.ore) {
@@ -1227,8 +1279,15 @@ class GenesisResult {
   /// Per-phase timing data for profiling.
   final PhaseTimings timings;
 
+  /// Phases that failed during generation (non-fatal, skipped).
+  final List<GenesisPhase> failedPhases;
+
+  /// Whether any non-fatal phases were skipped due to errors.
+  bool get hasDegradedPhases => failedPhases.isNotEmpty;
+
   const GenesisResult({
     required this.chunks,
     required this.timings,
+    this.failedPhases = const [],
   });
 }

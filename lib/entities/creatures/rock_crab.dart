@@ -32,8 +32,7 @@ class RockCrab extends Creature {
   @override
   Shape get bodyShape {
     // Wider body shape
-    return PolygonShape()
-      ..setAsBoxXY(0.6, 0.35);
+    return PolygonShape()..setAsBoxXY(0.6, 0.35);
   }
 
   @override
@@ -58,7 +57,8 @@ class RockCrab extends Creature {
 
       // Reverse at walls
       final frontX = position.x + _patrolDirection * 1.5;
-      final cellType = motherlodeGame.getCellType(frontX.round(), position.y.round());
+      final cellType =
+          motherlodeGame.getCellType(frontX.round(), position.y.round());
       if (cellType != 0) {
         // Not empty = wall
         _patrolDirection *= -1;

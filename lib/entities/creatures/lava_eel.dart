@@ -1,7 +1,6 @@
 import 'dart:math';
 import 'dart:ui';
 
-import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 
 import 'package:motherlode/entities/creatures/creature.dart';
@@ -101,7 +100,8 @@ class LavaEel extends Creature {
   }
 
   @override
-  bool shouldChase(double distToPod) => false; // Doesn't chase, attacks from distance
+  bool shouldChase(double distToPod) =>
+      false; // Doesn't chase, attacks from distance
 
   @override
   void render(Canvas canvas) {

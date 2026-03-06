@@ -38,7 +38,7 @@ class _UpgradeTreePanelState extends State<UpgradeTreePanel> {
         // Category selector
         Container(
           height: 68,
-          decoration: BoxDecoration(
+          decoration: const BoxDecoration(
             color: _surfaceColor,
             border: Border(bottom: BorderSide(color: _borderColor)),
           ),
@@ -147,19 +147,17 @@ class _UpgradeTreePanelState extends State<UpgradeTreePanel> {
       case 0: // Drill
         return DrillVisualWidget(level: currentLevel, maxLevel: maxLevel);
       case 1: // Hull
-        final hpPercent = widget.game.hullSystem.currentHull /
-            widget.game.hullSystem.maxHull;
+        final hpPercent =
+            widget.game.hullSystem.currentHull / widget.game.hullSystem.maxHull;
         return HullVisual(
             level: currentLevel, maxLevel: maxLevel, hpPercent: hpPercent);
       case 2: // Engine
         return EngineVisual(level: currentLevel, maxLevel: maxLevel);
       case 3: // Fuel Tank
-        final fillPercent = widget.game.fuelSystem.currentFuel /
-            widget.game.fuelSystem.maxFuel;
+        final fillPercent =
+            widget.game.fuelSystem.currentFuel / widget.game.fuelSystem.maxFuel;
         return FuelTankVisual(
-            level: currentLevel,
-            maxLevel: maxLevel,
-            fillPercent: fillPercent);
+            level: currentLevel, maxLevel: maxLevel, fillPercent: fillPercent);
       case 4: // Radiator
         return RadiatorVisual(level: currentLevel, maxLevel: maxLevel);
       case 5: // Cargo Bay
@@ -188,9 +186,10 @@ class _UpgradeTreePanelState extends State<UpgradeTreePanel> {
         final isOwned = index <= currentLevel;
         final isNext = index == currentLevel + 1;
         final isLocked = index > currentLevel + 1;
-        final canAfford =
-            widget.game.playerCash >= tier.cost && tier.cost > 0;
         final isAncientScrollTier = tier.cost == 0 && index > 0;
+        final canAfford = isAncientScrollTier
+            ? widget.game.ancientScrollCount > 0
+            : widget.game.playerCash >= tier.cost && tier.cost > 0;
 
         return Container(
           margin: const EdgeInsets.only(bottom: 8),
@@ -382,19 +381,52 @@ class _UpgradeTreePanelState extends State<UpgradeTreePanel> {
     }
 
     if (isAncientScrollTier) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.purple.withValues(alpha: isLocked ? 0.05 : 0.1),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(
-              color:
-                  Colors.purple.withValues(alpha: isLocked ? 0.1 : 0.3)),
-        ),
-        child: Icon(
-          Icons.auto_stories,
-          color: Colors.purple.withValues(alpha: isLocked ? 0.25 : 0.7),
-          size: 16,
+      final hasScroll = canAfford && isNext;
+      return GestureDetector(
+        onTap: hasScroll ? onBuy : null,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: hasScroll
+                ? Colors.purple.withValues(alpha: 0.2)
+                : Colors.purple.withValues(alpha: isLocked ? 0.05 : 0.1),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+                color: hasScroll
+                    ? Colors.purple.withValues(alpha: 0.6)
+                    : Colors.purple.withValues(alpha: isLocked ? 0.1 : 0.3)),
+            boxShadow: hasScroll
+                ? [
+                    BoxShadow(
+                      color: Colors.purple.withValues(alpha: 0.3),
+                      blurRadius: 8,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.auto_stories,
+                color: hasScroll
+                    ? Colors.purple
+                    : Colors.purple.withValues(alpha: isLocked ? 0.25 : 0.7),
+                size: 16,
+              ),
+              if (hasScroll) ...[
+                const SizedBox(width: 4),
+                Text(
+                  'x${widget.game.ancientScrollCount}',
+                  style: const TextStyle(
+                    color: Colors.purple,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ],
+          ),
         ),
       );
     }
@@ -556,11 +588,76 @@ class _UpgradeTreePanelState extends State<UpgradeTreePanel> {
     }
   }
 
-  void _purchaseUpgrade(int tierIndex) {
+  void _purchaseUpgrade(int tierIndex) async {
     final category = UpgradeDefinitions.allCategories[_selectedCategory];
     final tier = category.tiers[tierIndex];
+    final cost = tier.cost.toDouble();
+    final isScrollTier = tier.cost == 0 && tierIndex > 0;
 
-    if (!widget.game.spendCash(tier.cost.toDouble())) return;
+    if (isScrollTier) {
+      // Ancient Scroll tier — confirm and consume a scroll
+      if (widget.game.ancientScrollCount <= 0) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1C1C28),
+          title: Text('Unlock ${tier.name}?',
+              style: const TextStyle(color: Colors.white)),
+          content: Text(
+            'Use an Ancient Scroll to unlock ${tier.name}?\n'
+            'Scrolls remaining: ${widget.game.ancientScrollCount}',
+            style: const TextStyle(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child:
+                  const Text('Cancel', style: TextStyle(color: Colors.white38)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('UNLOCK',
+                  style: TextStyle(
+                      color: Colors.purple, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+      widget.game.ancientScrollCount--;
+    } else {
+      // Normal cash purchase — confirmation dialog for expensive upgrades
+      if (cost >= 1000) {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFF1C1C28),
+            title: Text('Buy ${tier.name}?',
+                style: const TextStyle(color: Colors.white)),
+            content: Text(
+              'Purchase ${category.name} upgrade for \$${_formatCost(tier.cost)}?',
+              style: const TextStyle(color: Colors.white70),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel',
+                    style: TextStyle(color: Colors.white38)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('BUY',
+                    style: TextStyle(
+                        color: Colors.green, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        );
+        if (confirmed != true) return;
+      }
+
+      if (!widget.game.spendCash(cost)) return;
+    }
 
     setState(() {
       switch (_selectedCategory) {

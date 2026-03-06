@@ -9,12 +9,16 @@ import 'package:motherlode/utils/constants.dart';
 import 'package:motherlode/world/chunk.dart';
 import 'package:motherlode/world/terrain_cell.dart';
 
-
 /// Renders marching squares mesh per chunk with depth-graded colors,
 /// procedural textures (dirt speckles, rock grain, sediment layers),
 /// ambient occlusion, ore glow, grass blades, and edge highlights.
 class TerrainRenderer extends Component with HasGameReference<MotherlodeGame> {
   double _time = 0;
+
+  // Pre-allocated Paint for animated effects to avoid per-frame allocation
+  final _animPaint = Paint()
+    ..style = PaintingStyle.fill
+    ..isAntiAlias = true;
 
   // Cached grass blade data per chunk (to avoid re-generating each frame)
   final Map<String, List<_GrassBlade>> _grassCache = {};
@@ -115,7 +119,8 @@ class TerrainRenderer extends Component with HasGameReference<MotherlodeGame> {
     }
 
     // Procedural texture details (dirt speckles, rock grain, sediment lines)
-    _renderTextureDetails(recordCanvas, chunk, chunkWorldX, chunkWorldY, fillPaint);
+    _renderTextureDetails(
+        recordCanvas, chunk, chunkWorldX, chunkWorldY, fillPaint);
 
     // Draw grass blades on surface polygons
     _renderGrassOnChunk(recordCanvas, chunk, chunkWorldY, fillPaint);
@@ -298,8 +303,8 @@ class TerrainRenderer extends Component with HasGameReference<MotherlodeGame> {
             paint,
           );
           // Tiny highlight on pebble
-          paint.color = ColorUtils.brighten(baseColor, 0.2)
-              .withValues(alpha: 0.2);
+          paint.color =
+              ColorUtils.brighten(baseColor, 0.2).withValues(alpha: 0.2);
           canvas.drawCircle(
             Offset(d.x - d.size * 0.2, d.y - d.size * 0.2),
             d.size * 0.3,
@@ -308,8 +313,8 @@ class TerrainRenderer extends Component with HasGameReference<MotherlodeGame> {
           break;
 
         case _DetailType.rootLine:
-          linePaint.color = ColorUtils.darken(baseColor, 0.2)
-              .withValues(alpha: 0.3);
+          linePaint.color =
+              ColorUtils.darken(baseColor, 0.2).withValues(alpha: 0.3);
           linePaint.strokeWidth = 0.02;
           final path = Path();
           path.moveTo(d.x, d.y);
@@ -391,7 +396,8 @@ class TerrainRenderer extends Component with HasGameReference<MotherlodeGame> {
 
     // Only generate grass near the surface (within first few chunks)
     final depthAtTop = chunkWorldY * GameConstants.feetPerTile;
-    if (depthAtTop > GameConstants.grassDepthThreshold + 100 || depthAtTop < -200) {
+    if (depthAtTop > GameConstants.grassDepthThreshold + 100 ||
+        depthAtTop < -200) {
       _grassCache.remove(chunkKey);
       return;
     }
@@ -441,7 +447,10 @@ class TerrainRenderer extends Component with HasGameReference<MotherlodeGame> {
 
     for (final blade in blades) {
       // Wind sway with varied frequency per blade
-      final sway = sin(_time * (1.2 + blade.shade * 0.8) + blade.x * 3.7 + blade.y * 2.3) * 0.06;
+      final sway = sin(_time * (1.2 + blade.shade * 0.8) +
+              blade.x * 3.7 +
+              blade.y * 2.3) *
+          0.06;
       final tipX = blade.x + blade.lean + sway;
       final tipY = blade.y - blade.height;
 
@@ -460,7 +469,8 @@ class TerrainRenderer extends Component with HasGameReference<MotherlodeGame> {
       }
 
       // Draw blade as a curved quadratic bezier for natural look
-      final baseWidth = 0.03 + blade.height * 0.06; // Wider base for taller blades
+      final baseWidth =
+          0.03 + blade.height * 0.06; // Wider base for taller blades
       final midX = blade.x + blade.lean * 0.4 + sway * 0.3;
       final midY = blade.y - blade.height * 0.55;
 
@@ -469,7 +479,8 @@ class TerrainRenderer extends Component with HasGameReference<MotherlodeGame> {
       // Left edge curves outward slightly
       path.quadraticBezierTo(midX - baseWidth * 0.3, midY, tipX, tipY);
       // Right edge curves back
-      path.quadraticBezierTo(midX + baseWidth * 0.3, midY, blade.x + baseWidth, blade.y);
+      path.quadraticBezierTo(
+          midX + baseWidth * 0.3, midY, blade.x + baseWidth, blade.y);
       path.close();
 
       paint.color = bladeColor;
@@ -477,10 +488,12 @@ class TerrainRenderer extends Component with HasGameReference<MotherlodeGame> {
 
       // Subtle highlight on the left side of the blade
       if (blade.height > 0.25) {
-        paint.color = ColorUtils.brighten(bladeColor, 0.2).withValues(alpha: 0.3);
+        paint.color =
+            ColorUtils.brighten(bladeColor, 0.2).withValues(alpha: 0.3);
         final hlPath = Path();
         hlPath.moveTo(blade.x - baseWidth * 0.5, blade.y);
-        hlPath.quadraticBezierTo(midX - baseWidth * 0.5, midY + blade.height * 0.1, tipX, tipY);
+        hlPath.quadraticBezierTo(
+            midX - baseWidth * 0.5, midY + blade.height * 0.1, tipX, tipY);
         hlPath.lineTo(midX, midY);
         hlPath.close();
         canvas.drawPath(hlPath, paint);
@@ -490,9 +503,7 @@ class TerrainRenderer extends Component with HasGameReference<MotherlodeGame> {
 
   /// Render animated per-frame effects that shouldn't be cached.
   void _renderAnimatedEffects(Canvas canvas, List<Chunk> visibleChunks) {
-    final paint = Paint()
-      ..style = PaintingStyle.fill
-      ..isAntiAlias = true;
+    final paint = _animPaint;
 
     for (final chunk in visibleChunks) {
       final chunkOffsetX = chunk.chunkX * GameConstants.chunkSize.toDouble();
@@ -547,13 +558,13 @@ class _GrassBlade {
 
 /// Types of procedural terrain detail
 enum _DetailType {
-  speckle,       // Tiny dots (sand grains, dirt particles)
-  pebble,        // Small oval stones
-  rootLine,      // Curved organic lines (roots, worms in shallow dirt)
-  grainLine,     // Straight rock grain / stratification lines
-  mineralFleck,  // Bright tiny dots (crystal/mineral inclusions in rock)
-  fractureLine,  // Jagged cracks in obsidian/hard rock
-  sedimentLine,  // Horizontal layer boundary lines
+  speckle, // Tiny dots (sand grains, dirt particles)
+  pebble, // Small oval stones
+  rootLine, // Curved organic lines (roots, worms in shallow dirt)
+  grainLine, // Straight rock grain / stratification lines
+  mineralFleck, // Bright tiny dots (crystal/mineral inclusions in rock)
+  fractureLine, // Jagged cracks in obsidian/hard rock
+  sedimentLine, // Horizontal layer boundary lines
 }
 
 /// A single procedural terrain detail element
@@ -561,7 +572,7 @@ class _TerrainDetail {
   final double x, y, size;
   final _DetailType type;
   final double brightness; // Positive = lighter, negative = darker
-  final double angle;      // Rotation for lines
+  final double angle; // Rotation for lines
 
   const _TerrainDetail({
     required this.x,

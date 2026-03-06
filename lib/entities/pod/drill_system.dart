@@ -1,9 +1,11 @@
+import 'dart:ui' show Color;
+
 import 'package:flame/components.dart';
-import 'package:flame_forge2d/flame_forge2d.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 
 import 'package:motherlode/entities/pod/pod.dart';
 import 'package:motherlode/motherlode_game.dart';
-import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/ore_registry.dart';
 import 'package:motherlode/world/terrain_cell.dart';
 
 /// Drilling logic using SDF sphere subtraction for smooth terrain removal.
@@ -18,6 +20,7 @@ class DrillSystem extends Component {
   double _currentCellProgress = 0;
   int? _targetGridX;
   int? _targetGridY;
+  double _hapticTimer = 0;
 
   /// Base radius of the drill carve in grid units (level 0).
   static const double _baseRadius = 1.0;
@@ -68,14 +71,25 @@ class DrillSystem extends Component {
       _targetGridY = null;
     }
 
-    // Emit drill particles
+    // Emit drill particles and SFX
+    game.audioManager.playDrill();
     game.particleSystem.emitDrillParticles(
       Vector2(podX, podY + 1.2),
       cell.baseColor,
     );
 
-    // Consume extra fuel while drilling
-    game.fuelSystem.consumeFuel(GameConstants.fuelConsumptionDrill * dt);
+    // Subtle camera vibration while drilling
+    game.earthquakeSystem.setDrillVibrating();
+
+    // Throttled haptic feedback for drilling (every 0.15s)
+    _hapticTimer += dt;
+    if (_hapticTimer >= 0.15) {
+      _hapticTimer = 0;
+      HapticFeedback.lightImpact();
+    }
+
+    // Fuel consumption is handled by Pod._consumeFuel() when state == drilling.
+    // Do NOT consume fuel here to avoid double consumption.
   }
 
   /// Remove a drilled cell using SDF sphere subtraction and collect any ore.
@@ -85,9 +99,10 @@ class DrillSystem extends Component {
   /// checked on the target cell before carving, and on any newly-exposed
   /// ore cells after carving.
   void _removeCell(int gridX, int gridY, TerrainCell cell) {
-    // Collect ore from the target cell before carving
+    // Try to collect ore before carving; if cargo is full, ore is destroyed
+    // but terrain is still carved so the player isn't stuck.
     if (cell.type == CellType.ore && cell.oreType != null) {
-      if (!_collectOre(gridX, gridY, cell)) return; // Cargo full
+      _collectOre(gridX, gridY, cell);
     }
 
     // Carve smooth round hole via centralized SDF drill on ChunkManager
@@ -101,8 +116,7 @@ class DrillSystem extends Component {
     // Collect ore from any cells that were newly cleared by the carve
     for (final (gx, gy, modifiedCell) in modified) {
       if (gx == gridX && gy == gridY) continue; // Already collected above
-      if (modifiedCell.type == CellType.empty &&
-          modifiedCell.oreType != null) {
+      if (modifiedCell.type == CellType.empty && modifiedCell.oreType != null) {
         // Cell was ore but got carved to empty — ore is lost (destroyed)
         modifiedCell.oreType = null;
       }
@@ -117,10 +131,23 @@ class DrillSystem extends Component {
     final ore = cell.oreType!;
 
     if (ore.isSpecialCollectible) {
+      // Ancient Scroll: increment count and show special effects
+      if (ore == OreRegistry.ancientScroll) {
+        game.ancientScrollCount++;
+        final pos = Vector2(gridX.toDouble(), gridY.toDouble());
+        // Extra celebration: multiple sparkle bursts
+        game.particleSystem.emitOreSparkle(pos, ore.color);
+        game.particleSystem.emitOreSparkle(pos, const Color(0xFFFFD700));
+        game.particleSystem.emitOrePickup(pos, ore.color, ore.spritePath);
+        game.audioManager.playOrePickup();
+        game.earthquakeSystem.startShake(0.4, 0.5);
+        return true;
+      }
       game.addCash(ore.value.toDouble());
       final pos = Vector2(gridX.toDouble(), gridY.toDouble());
       game.particleSystem.emitOreSparkle(pos, ore.color);
       game.particleSystem.emitOrePickup(pos, ore.color, ore.spritePath);
+      game.audioManager.playOrePickup();
       return true;
     }
 
@@ -129,6 +156,7 @@ class DrillSystem extends Component {
       final pos = Vector2(gridX.toDouble(), gridY.toDouble());
       game.particleSystem.emitOreSparkle(pos, ore.color);
       game.particleSystem.emitOrePickup(pos, ore.color, ore.spritePath);
+      game.audioManager.playOrePickup();
       pod.updateMass();
       return true;
     }

@@ -20,9 +20,8 @@ class CargoSystem {
   bool get isFull => _currentWeight >= maxCapacity;
 
   /// Current fill ratio (0.0 to 1.0)
-  double get fillRatio => (maxCapacity > 0)
-      ? (_currentWeight / maxCapacity).clamp(0.0, 1.0)
-      : 0.0;
+  double get fillRatio =>
+      (maxCapacity > 0) ? (_currentWeight / maxCapacity).clamp(0.0, 1.0) : 0.0;
 
   /// Check if an ore of given weight can be added
   bool canAdd(double weight) {
@@ -60,6 +59,21 @@ class CargoSystem {
     final value = totalValue;
     _inventory.clear();
     _currentWeight = 0;
+    return value;
+  }
+
+  /// Sell all units of a specific ore type, returns sale value.
+  double sellOre(String oreName) {
+    final count = _inventory[oreName];
+    if (count == null || count <= 0) return 0;
+
+    final ore = OreRegistry.getByName(oreName);
+    if (ore == null) return 0;
+
+    final value = ore.value.toDouble() * count;
+    _currentWeight -= ore.weight * count;
+    if (_currentWeight < 0) _currentWeight = 0;
+    _inventory.remove(oreName);
     return value;
   }
 

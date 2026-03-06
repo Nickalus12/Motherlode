@@ -76,7 +76,7 @@ class _ShopOverlayState extends State<ShopOverlay>
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
         color: _surfaceColor,
-        border: Border(
+        border: const Border(
           bottom: BorderSide(color: _borderColor),
         ),
         boxShadow: [
@@ -106,7 +106,8 @@ class _ShopOverlayState extends State<ShopOverlay>
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.monetization_on, color: _accentAmber, size: 18),
+                const Icon(Icons.monetization_on,
+                    color: _accentAmber, size: 18),
                 const SizedBox(width: 6),
                 Text(
                   '\$${_formatCash(widget.game.playerCash)}',
@@ -177,7 +178,8 @@ class _ShopOverlayState extends State<ShopOverlay>
     final fuelSystem = widget.game.fuelSystem;
     final needed = fuelSystem.maxFuel - fuelSystem.currentFuel;
     final cost = needed * 10;
-    final fuelPercent = (fuelSystem.currentFuel / fuelSystem.maxFuel * 100).toInt();
+    final fuelPercent =
+        (fuelSystem.currentFuel / fuelSystem.maxFuel * 100).toInt();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -187,8 +189,8 @@ class _ShopOverlayState extends State<ShopOverlay>
           FuelTankVisual(
             level: widget.game.fuelTankLevel,
             maxLevel: UpgradeDefinitions.fuelTanks.maxLevel,
-            fillPercent: (fuelSystem.currentFuel / fuelSystem.maxFuel)
-                .clamp(0.0, 1.0),
+            fillPercent:
+                (fuelSystem.currentFuel / fuelSystem.maxFuel).clamp(0.0, 1.0),
           ),
           const SizedBox(height: 12),
 
@@ -225,7 +227,8 @@ class _ShopOverlayState extends State<ShopOverlay>
                     Text(
                       'Fuel Level',
                       style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.6), fontSize: 13),
+                          color: Colors.white.withValues(alpha: 0.6),
+                          fontSize: 13),
                     ),
                     Text(
                       '$fuelPercent%',
@@ -273,13 +276,17 @@ class _ShopOverlayState extends State<ShopOverlay>
                 label: 'FILL TANK',
                 cost: '\$${cost.toStringAsFixed(0)}',
                 color: Colors.green,
-                onPressed: () {
-                  if (widget.game.spendCash(cost)) {
+                onPressed: () => _confirmPurchase(
+                  context,
+                  'Fill Fuel Tank',
+                  'Fill tank for \$${cost.toStringAsFixed(0)}?',
+                  cost,
+                  () {
                     setState(() {
                       fuelSystem.addFuel(needed);
                     });
-                  }
-                },
+                  },
+                ),
               ),
             )
           else
@@ -354,66 +361,48 @@ class _ShopOverlayState extends State<ShopOverlay>
           widget.game.reserveFuelCount,
           Icons.local_gas_station,
           Colors.green,
-          () {
-            if (widget.game.spendCash(SpecialItems.reserveFuelTank.cost.toDouble())) {
-              setState(() => widget.game.reserveFuelCount++);
-            }
-          },
+          () => _buyConsumable(context, SpecialItems.reserveFuelTank,
+              () => widget.game.reserveFuelCount++),
         ),
         _buildConsumableItem(
           SpecialItems.hullRepairNanobots,
           widget.game.nanobotCount,
           Icons.build,
           Colors.cyan,
-          () {
-            if (widget.game.spendCash(SpecialItems.hullRepairNanobots.cost.toDouble())) {
-              setState(() => widget.game.nanobotCount++);
-            }
-          },
+          () => _buyConsumable(context, SpecialItems.hullRepairNanobots,
+              () => widget.game.nanobotCount++),
         ),
         _buildConsumableItem(
           SpecialItems.dynamite,
           widget.game.dynamiteCount,
           Icons.flash_on,
           Colors.orange,
-          () {
-            if (widget.game.spendCash(SpecialItems.dynamite.cost.toDouble())) {
-              setState(() => widget.game.dynamiteCount++);
-            }
-          },
+          () => _buyConsumable(context, SpecialItems.dynamite,
+              () => widget.game.dynamiteCount++),
         ),
         _buildConsumableItem(
           SpecialItems.plasticExplosive,
           widget.game.plasticExplosiveCount,
           Icons.local_fire_department,
           Colors.red,
-          () {
-            if (widget.game.spendCash(SpecialItems.plasticExplosive.cost.toDouble())) {
-              setState(() => widget.game.plasticExplosiveCount++);
-            }
-          },
+          () => _buyConsumable(context, SpecialItems.plasticExplosive,
+              () => widget.game.plasticExplosiveCount++),
         ),
         _buildConsumableItem(
           SpecialItems.quantumTeleporter,
           widget.game.teleporterCount,
           Icons.bolt,
           Colors.purple,
-          () {
-            if (widget.game.spendCash(SpecialItems.quantumTeleporter.cost.toDouble())) {
-              setState(() => widget.game.teleporterCount++);
-            }
-          },
+          () => _buyConsumable(context, SpecialItems.quantumTeleporter,
+              () => widget.game.teleporterCount++),
         ),
         _buildConsumableItem(
           SpecialItems.matterTransmitter,
           widget.game.transmitterCount,
           Icons.star,
           Colors.amber,
-          () {
-            if (widget.game.spendCash(SpecialItems.matterTransmitter.cost.toDouble())) {
-              setState(() => widget.game.transmitterCount++);
-            }
-          },
+          () => _buyConsumable(context, SpecialItems.matterTransmitter,
+              () => widget.game.transmitterCount++),
         ),
       ],
     );
@@ -434,9 +423,7 @@ class _ShopOverlayState extends State<ShopOverlay>
         color: _cardColor,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: canAfford
-              ? accentColor.withValues(alpha: 0.2)
-              : _borderColor,
+          color: canAfford ? accentColor.withValues(alpha: 0.2) : _borderColor,
         ),
       ),
       child: Row(
@@ -588,12 +575,62 @@ class _ShopOverlayState extends State<ShopOverlay>
             ),
           ],
         ),
-        child: Icon(
+        child: const Icon(
           Icons.local_gas_station,
           color: Colors.white,
           size: 28,
         ),
       ),
+    );
+  }
+
+  /// Show confirmation dialog for purchases over $1000, or buy directly.
+  Future<void> _confirmPurchase(
+    BuildContext context,
+    String title,
+    String message,
+    double cost,
+    VoidCallback onConfirmed,
+  ) async {
+    if (cost >= 1000) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: const Color(0xFF1C1C28),
+          title: Text(title, style: const TextStyle(color: Colors.white)),
+          content: Text(message, style: const TextStyle(color: Colors.white70)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child:
+                  const Text('Cancel', style: TextStyle(color: Colors.white38)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('BUY',
+                  style: TextStyle(
+                      color: Colors.green, fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true) return;
+    }
+
+    if (widget.game.spendCash(cost)) {
+      setState(onConfirmed);
+    }
+  }
+
+  /// Buy a consumable item with confirmation for expensive ones.
+  void _buyConsumable(
+      BuildContext context, ConsumableItem item, VoidCallback applyPurchase) {
+    _confirmPurchase(
+      context,
+      'Buy ${item.name}?',
+      'Purchase ${item.name} for \$${item.cost}?',
+      item.cost.toDouble(),
+      applyPurchase,
     );
   }
 

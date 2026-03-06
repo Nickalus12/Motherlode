@@ -112,7 +112,7 @@ class TerrainCell {
       case CellType.lava:
         return const Color(0xFFFF4500); // Bright orange-red
       case CellType.gas:
-        return const Color(0xFF00FF4420);
+        return const Color(0x2000FF44);
       case CellType.ore:
         return oreType?.color ?? const Color(0xFFFFD700);
       case CellType.bedrock:

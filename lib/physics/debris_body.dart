@@ -6,6 +6,7 @@ import 'package:flame_forge2d/flame_forge2d.dart';
 import 'package:motherlode/entities/pod/pod.dart';
 import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/terrain_cell.dart';
 
 /// Dynamic falling dirt/rock body created from collapsed terrain
 ///
@@ -21,6 +22,15 @@ class DebrisBody extends BodyComponent with ContactCallbacks {
 
   double _restingTime = 0.0;
   bool _settled = false;
+
+  // Pre-allocated Paint objects to avoid per-frame GC pressure
+  late final Paint _fillPaint = Paint()
+    ..color = color
+    ..style = PaintingStyle.fill;
+  final Paint _outlinePaint = Paint()
+    ..color = const Color(0x40000000)
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 0.04;
 
   /// Callback invoked when this debris converts to terrain.
   /// Parameters: grid x, grid y of the settled cell.
@@ -78,22 +88,13 @@ class DebrisBody extends BodyComponent with ContactCallbacks {
 
   @override
   void render(Canvas canvas) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
     canvas.drawRect(
       const Rect.fromLTWH(-0.3, -0.3, 0.6, 0.6),
-      paint,
+      _fillPaint,
     );
-
-    final outlinePaint = Paint()
-      ..color = const Color(0x40000000)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.04;
     canvas.drawRect(
       const Rect.fromLTWH(-0.3, -0.3, 0.6, 0.6),
-      outlinePaint,
+      _outlinePaint,
     );
   }
 
@@ -163,10 +164,15 @@ class DebrisManager extends Component with HasGameReference<MotherlodeGame> {
   }
 
   void _onDebrisConvert(int gridX, int gridY) {
-    // Set the corresponding terrain cell to solid
-    game.chunkManager.removeCell(gridX, gridY);
-    // Note: removeCell sets to empty. For debris settling we'd ideally
-    // set the cell to solid, but for now this marks the chunk dirty.
+    // Set the corresponding terrain cell to solid dirt
+    final cell = game.chunkManager.getTerrainCell(gridX, gridY);
+    if (cell != null) {
+      cell.type = CellType.dirt;
+      cell.sdf = -1.0;
+      cell.oreType = null;
+      cell.isDirty = true;
+      game.chunkManager.markCellDirty(gridX, gridY);
+    }
   }
 
   /// Force-settle the oldest N debris bodies

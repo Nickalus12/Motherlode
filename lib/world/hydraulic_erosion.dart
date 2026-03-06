@@ -175,7 +175,8 @@ class HydraulicErosion {
   }
 
   /// Get SDF value with bilinear interpolation for sub-cell positions.
-  double _sampleSdf(Float64List sdf, int width, int height, double x, double y) {
+  double _sampleSdf(
+      Float64List sdf, int width, int height, double x, double y) {
     final x0 = x.floor().clamp(0, width - 2);
     final y0 = y.floor().clamp(0, height - 2);
     final fx = x - x0;
@@ -312,8 +313,8 @@ class HydraulicErosion {
         droplet.sediment -= depositAmount;
       } else {
         // ERODE: pick up sediment
-        var erodeAmount =
-            min((capacity - droplet.sediment) * params.erosionRate, -deltaHeight);
+        var erodeAmount = min(
+            (capacity - droplet.sediment) * params.erosionRate, -deltaHeight);
         erodeAmount = max(erodeAmount, 0.0);
 
         // Depth weighting: erosion is stronger near the SDF zero-crossing
@@ -327,7 +328,8 @@ class HydraulicErosion {
       }
 
       // Update speed
-      final speedSq = droplet.speed * droplet.speed + deltaHeight * params.gravity;
+      final speedSq =
+          droplet.speed * droplet.speed + deltaHeight * params.gravity;
       droplet.speed = sqrt(max(speedSq, 0.0));
 
       // Evaporate water
@@ -466,7 +468,8 @@ class ErosionWorkerPool {
     int overlapCells = 2,
   }) async {
     if (!_initialized || _workerPorts.isEmpty) {
-      throw StateError('ErosionWorkerPool not initialized. Call initialize() first.');
+      throw StateError(
+          'ErosionWorkerPool not initialized. Call initialize() first.');
     }
 
     final stripCount = _workerPorts.length;
@@ -522,11 +525,13 @@ class ErosionWorkerPool {
     });
 
     // Transfer SDF data with zero-copy
-    final transferable = TransferableTypedData.fromList([strip.sdf.buffer.asByteData()]);
+    final transferable =
+        TransferableTypedData.fromList([strip.sdf.buffer.asByteData()]);
 
     _workerPorts[index].send(_ErosionCommand(
       strip: SdfStrip(
-        sdf: Float64List(0), // Placeholder; actual data via TransferableTypedData
+        sdf: Float64List(
+            0), // Placeholder; actual data via TransferableTypedData
         width: strip.width,
         height: strip.height,
         stripIndex: strip.stripIndex,
@@ -599,7 +604,8 @@ class ErosionWorkerPool {
           final leftIdx = y * left.width + (left.width - overlap + ox);
           final rightIdx = y * right.width + ox;
 
-          final blended = left.sdf[leftIdx] * (1.0 - t) + right.sdf[rightIdx] * t;
+          final blended =
+              left.sdf[leftIdx] * (1.0 - t) + right.sdf[rightIdx] * t;
           left.sdf[leftIdx] = blended;
           right.sdf[rightIdx] = blended;
         }
@@ -621,10 +627,12 @@ class ErosionWorkerPool {
     for (int i = 0; i < stripCount; i++) {
       final result = results[i];
       final coreStartX = i * baseStripWidth;
-      final coreEndX = (i == stripCount - 1) ? fullWidth : (i + 1) * baseStripWidth;
+      final coreEndX =
+          (i == stripCount - 1) ? fullWidth : (i + 1) * baseStripWidth;
 
       // The core data within the strip starts after the left overlap
-      final leftOverlap = coreStartX - (coreStartX - overlap).clamp(0, coreStartX);
+      final leftOverlap =
+          coreStartX - (coreStartX - overlap).clamp(0, coreStartX);
 
       final coreWidth = coreEndX - coreStartX;
       for (int y = 0; y < fullHeight; y++) {

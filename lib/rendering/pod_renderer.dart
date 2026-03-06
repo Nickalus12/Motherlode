@@ -53,6 +53,22 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
   double _damageFlash = 0;
   double _lastHull = -1;
 
+  // Pre-allocated Paint objects to avoid per-frame GC pressure
+  final _imgPaint = ui.Paint();
+  final _drillPaint = ui.Paint();
+  final _flashPaint = ui.Paint()..blendMode = ui.BlendMode.plus;
+  final _sparkPaint = ui.Paint()..style = ui.PaintingStyle.fill;
+  final _exhaustPaint = ui.Paint()..style = ui.PaintingStyle.fill;
+  final _statusPaint = ui.Paint();
+  final _bodyFillPaint = ui.Paint()..color = const ui.Color(0xFF4A6741);
+  final _bodyStrokePaint = ui.Paint()
+    ..color = const ui.Color(0xFF2D3F28)
+    ..style = ui.PaintingStyle.stroke
+    ..strokeWidth = 0.06;
+  final _drillFallbackPaint = ui.Paint()
+    ..color = const ui.Color(0xFFAAAAAA)
+    ..style = ui.PaintingStyle.fill;
+
   PodRenderer({required this.pod});
 
   @override
@@ -99,13 +115,16 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
       _idleFrame = (_idleFrame + 1) % _idleFrames.length;
     }
 
-    // Drill frame cycling (only when drilling)
+    // Drill frame cycling (only when drilling, reset when not)
     if (pod.state == PodState.drilling) {
       _drillTimer += dt;
       if (_drillTimer >= 1.0 / _drillFps) {
         _drillTimer = 0;
         _drillFrame = (_drillFrame + 1) % _drillFrameCount;
       }
+    } else {
+      _drillFrame = 0;
+      _drillTimer = 0;
     }
 
     // Detect hull damage for flash effect
@@ -177,7 +196,7 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
 
     if (img != null) {
       // Hull centered on physics body; body is setAsBoxXY(0.9, 1.1) = 1.8×2.2
-      _drawImage(canvas, img, const ui.Offset(0, 0), 1.8, 2.0);
+      _drawImage(canvas, img, const ui.Offset(0, 0), 1.8, 2.2);
     } else {
       _drawBodyFallback(canvas);
     }
@@ -213,10 +232,9 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
         height: drillHeight,
       );
 
-      final paint = ui.Paint();
       // Glow pulse when drilling
       if (pod.state == PodState.drilling) {
-        paint.colorFilter = ui.ColorFilter.mode(
+        _drillPaint.colorFilter = ui.ColorFilter.mode(
           ui.Color.from(
             alpha: (sin(_time * 10) + 1) * 0.1,
             red: 1.0,
@@ -225,9 +243,11 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
           ),
           ui.BlendMode.plus,
         );
+      } else {
+        _drillPaint.colorFilter = null;
       }
 
-      canvas.drawImageRect(sheet, srcRect, dstRect, paint);
+      canvas.drawImageRect(sheet, srcRect, dstRect, _drillPaint);
     } else {
       _drawDrillFallback(canvas);
     }
@@ -241,50 +261,51 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
     double height,
   ) {
     final srcRect = ui.Rect.fromLTWH(
-      0, 0, img.width.toDouble(), img.height.toDouble(),
+      0,
+      0,
+      img.width.toDouble(),
+      img.height.toDouble(),
     );
     final dstRect = ui.Rect.fromCenter(
       center: center,
       width: width,
       height: height,
     );
-    canvas.drawImageRect(img, srcRect, dstRect, ui.Paint());
+    canvas.drawImageRect(img, srcRect, dstRect, _imgPaint);
   }
 
   void _drawDamageFlash(ui.Canvas canvas) {
     final flashAlpha = (_damageFlash * 0.6).clamp(0.0, 1.0);
+    _flashPaint.color = ui.Color.from(
+      alpha: flashAlpha,
+      red: 1.0,
+      green: 1.0,
+      blue: 1.0,
+    );
     canvas.drawRect(
       ui.Rect.fromCenter(
         center: const ui.Offset(0, 0),
         width: 1.8,
-        height: 2.0,
+        height: 2.2,
       ),
-      ui.Paint()
-        ..color = ui.Color.from(
-          alpha: flashAlpha,
-          red: 1.0,
-          green: 1.0,
-          blue: 1.0,
-        )
-        ..blendMode = ui.BlendMode.plus,
+      _flashPaint,
     );
   }
 
   void _drawDrillSparks(ui.Canvas canvas) {
     final random = Random((_time * 30).toInt());
-    final sparkPaint = ui.Paint()..style = ui.PaintingStyle.fill;
 
     for (int i = 0; i < 6; i++) {
       final sparkX = (random.nextDouble() - 0.5) * 0.5;
       final sparkY = 1.1 + random.nextDouble() * 0.2;
       final size = 0.02 + random.nextDouble() * 0.03;
       final t = random.nextDouble();
-      sparkPaint.color = ui.Color.lerp(
+      _sparkPaint.color = ui.Color.lerp(
         const ui.Color(0xFFFFFFCC),
         const ui.Color(0xFFFF6600),
         t,
       )!;
-      canvas.drawCircle(ui.Offset(sparkX, sparkY), size, sparkPaint);
+      canvas.drawCircle(ui.Offset(sparkX, sparkY), size, _sparkPaint);
     }
   }
 
@@ -293,7 +314,7 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
     // Exhaust comes from the side panels of the mech, near the top of the body
     for (int side = -1; side <= 1; side += 2) {
       final baseX = side * 0.45; // tight against side panels of the mech body
-      final baseY = -0.2; // shoulder area where engines would be
+      const baseY = -0.2; // shoulder area where engines would be
       for (int i = 0; i < 4; i++) {
         final flicker = sin(flamePhase + i * 1.5 + side) * 0.08;
         final flameLength = 0.2 + i * 0.05 + flicker;
@@ -303,17 +324,17 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
           const ui.Color(0xFFFFFFCC),
           const ui.Color(0xFFFF4400),
           t,
-        )!.withValues(alpha: 1.0 - t * 0.5);
+        )!
+            .withValues(alpha: 1.0 - t * 0.5);
 
+        _exhaustPaint.color = flameColor;
         canvas.drawRect(
           ui.Rect.fromCenter(
             center: ui.Offset(baseX, baseY + flameLength / 2),
             width: flameWidth,
             height: flameLength,
           ),
-          ui.Paint()
-            ..color = flameColor
-            ..style = ui.PaintingStyle.fill,
+          _exhaustPaint,
         );
       }
     }
@@ -325,10 +346,10 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
       final cargoColor = cargoRatio > 0.9
           ? const ui.Color(0xFFFF0000)
           : const ui.Color(0xFF00CCCC);
+      _statusPaint.color = cargoColor;
       canvas.drawRect(
-        ui.Rect.fromLTWH(
-            -0.85, 0.3 - cargoRatio * 0.5, 0.04, cargoRatio * 0.5),
-        ui.Paint()..color = cargoColor,
+        ui.Rect.fromLTWH(-0.85, 0.3 - cargoRatio * 0.5, 0.04, cargoRatio * 0.5),
+        _statusPaint,
       );
     }
   }
@@ -336,37 +357,28 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
   // Fallback renderers in case sprites fail to load
   void _drawBodyFallback(ui.Canvas canvas) {
     final bodyPath = ui.Path();
-    bodyPath.moveTo(-0.7, -1.0);
-    bodyPath.lineTo(0.7, -1.0);
+    bodyPath.moveTo(-0.7, -1.1);
+    bodyPath.lineTo(0.7, -1.1);
     bodyPath.lineTo(0.8, 0.3);
-    bodyPath.lineTo(0.6, 0.7);
-    bodyPath.lineTo(-0.6, 0.7);
+    bodyPath.lineTo(0.6, 0.8);
+    bodyPath.lineTo(-0.6, 0.8);
     bodyPath.lineTo(-0.8, 0.3);
     bodyPath.close();
 
-    canvas.drawPath(bodyPath, ui.Paint()..color = const ui.Color(0xFF4A6741));
-    canvas.drawPath(
-      bodyPath,
-      ui.Paint()
-        ..color = const ui.Color(0xFF2D3F28)
-        ..style = ui.PaintingStyle.stroke
-        ..strokeWidth = 0.06,
-    );
+    canvas.drawPath(bodyPath, _bodyFillPaint);
+    canvas.drawPath(bodyPath, _bodyStrokePaint);
   }
 
   void _drawDrillFallback(ui.Canvas canvas) {
-    final shaftPaint = ui.Paint()
-      ..color = const ui.Color(0xFFAAAAAA)
-      ..style = ui.PaintingStyle.fill;
     canvas.drawRect(
       const ui.Rect.fromLTWH(-0.08, 0.7, 0.16, 0.3),
-      shaftPaint,
+      _drillFallbackPaint,
     );
     final bitPath = ui.Path();
     bitPath.moveTo(-0.1, 1.0);
     bitPath.lineTo(0.1, 1.0);
     bitPath.lineTo(0.0, 1.15);
     bitPath.close();
-    canvas.drawPath(bitPath, shaftPaint);
+    canvas.drawPath(bitPath, _drillFallbackPaint);
   }
 }

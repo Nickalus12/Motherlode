@@ -48,7 +48,10 @@ class ItemSpriteManager {
     // Single-frame image — return full rect
     if (isSingleFrame(spritePath)) {
       return ui.Rect.fromLTWH(
-        0, 0, image.width.toDouble(), image.height.toDouble(),
+        0,
+        0,
+        image.width.toDouble(),
+        image.height.toDouble(),
       );
     }
 

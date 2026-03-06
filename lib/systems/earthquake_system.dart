@@ -26,6 +26,12 @@ class EarthquakeSystem extends Component with HasGameReference<MotherlodeGame> {
   double _shakeIntensity = 0;
   double _shakeDuration = 0;
 
+  // Explosion flash effect (white bloom that fades)
+  double _explosionFlash = 0;
+
+  // Drill vibration state
+  bool _isDrillVibrating = false;
+
   EarthquakeSystem({required MotherlodeGame game}) : _game = game;
 
   @override
@@ -49,6 +55,19 @@ class EarthquakeSystem extends Component with HasGameReference<MotherlodeGame> {
 
     // Check for cash milestone earthquakes
     _checkCashMilestone();
+
+    // Decay explosion flash
+    if (_explosionFlash > 0) {
+      _explosionFlash = (_explosionFlash - dt * 4.0).clamp(0.0, 1.0);
+    }
+
+    // Drill vibration (subtle, high-frequency)
+    if (_isDrillVibrating && !_shaking) {
+      final vx = (_random.nextDouble() - 0.5) * 0.04;
+      final vy = (_random.nextDouble() - 0.5) * 0.04;
+      _game.camera.viewfinder.position += Vector2(vx, vy);
+    }
+    _isDrillVibrating = false; // Reset each frame; DrillSystem sets it
 
     // Update screen shake
     if (_shaking) {
@@ -151,10 +170,23 @@ class EarthquakeSystem extends Component with HasGameReference<MotherlodeGame> {
 
   void _applyShake(double dt) {
     final decay = (_shakeDuration / 2.0).clamp(0.0, 1.0);
-    final offsetX = (_random.nextDouble() - 0.5) * _shakeIntensity * decay * 0.5;
-    final offsetY = (_random.nextDouble() - 0.5) * _shakeIntensity * decay * 0.5;
+    final offsetX =
+        (_random.nextDouble() - 0.5) * _shakeIntensity * decay * 0.5;
+    final offsetY =
+        (_random.nextDouble() - 0.5) * _shakeIntensity * decay * 0.5;
 
     _game.camera.viewfinder.position += Vector2(offsetX, offsetY);
+  }
+
+  /// Trigger a brief white flash overlay (called by ExplosionSystem).
+  void triggerExplosionFlash() {
+    _explosionFlash = 1.0;
+  }
+
+  /// Signal that the drill is actively cutting this frame.
+  /// Call every frame during drilling for continuous vibration.
+  void setDrillVibrating() {
+    _isDrillVibrating = true;
   }
 
   /// Whether an earthquake is currently happening
@@ -162,4 +194,7 @@ class EarthquakeSystem extends Component with HasGameReference<MotherlodeGame> {
 
   /// Current shake intensity (for HUD effects)
   double get currentShakeIntensity => _shaking ? _shakeIntensity : 0;
+
+  /// Current explosion flash intensity (0.0 to 1.0) for LightingSystem.
+  double get explosionFlash => _explosionFlash;
 }

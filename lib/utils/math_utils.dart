@@ -74,8 +74,7 @@ class MathUtils {
     double coneHalfAngle, [
     double magnitude = 1.0,
   ]) {
-    final angle =
-        baseAngle + randomRange(-coneHalfAngle, coneHalfAngle);
+    final angle = baseAngle + randomRange(-coneHalfAngle, coneHalfAngle);
     return Vector2(cos(angle) * magnitude, sin(angle) * magnitude);
   }
 

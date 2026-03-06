@@ -27,7 +27,8 @@ class PooledParticle {
   double rotation = 0.0;
 
   /// Remaining life ratio (1.0 = fresh, 0.0 = dead)
-  double get lifeRatio => lifetime > 0 ? ((lifetime - age) / lifetime).clamp(0.0, 1.0) : 0.0;
+  double get lifeRatio =>
+      lifetime > 0 ? ((lifetime - age) / lifetime).clamp(0.0, 1.0) : 0.0;
 
   void reset() {
     age = 0.0;
@@ -40,19 +41,45 @@ class PooledParticle {
 /// Pre-allocated particle pool with round-robin acquisition.
 /// Zero heap allocation after initialization.
 class ParticlePool {
-  static const int poolSize = 500;
+  static const int poolSize = 1200;
 
   final List<PooledParticle> _particles =
       List.generate(poolSize, (_) => PooledParticle());
   int _nextIndex = 0;
 
   /// Acquire a particle from the pool.
-  /// Round-robin: if the particle at nextIndex is still active, it gets recycled.
+  /// Priority: recycle dead particles first, then the particle with the
+  /// shortest remaining life (most about to die) to avoid stealing from
+  /// long-lived effects like explosions.
   PooledParticle acquire() {
-    final particle = _particles[_nextIndex];
+    // First pass: find a dead particle starting from _nextIndex
+    for (int i = 0; i < poolSize; i++) {
+      final idx = (_nextIndex + i) % poolSize;
+      if (!_particles[idx].active) {
+        _nextIndex = (idx + 1) % poolSize;
+        final particle = _particles[idx];
+        particle.reset();
+        particle.active = true;
+        return particle;
+      }
+    }
+
+    // All particles active — recycle the one closest to death
+    int bestIdx = _nextIndex;
+    double bestRemaining = double.infinity;
+    for (int i = 0; i < poolSize; i++) {
+      final p = _particles[i];
+      final remaining = p.lifetime - p.age;
+      if (remaining < bestRemaining) {
+        bestRemaining = remaining;
+        bestIdx = i;
+      }
+    }
+
+    _nextIndex = (bestIdx + 1) % poolSize;
+    final particle = _particles[bestIdx];
     particle.reset();
     particle.active = true;
-    _nextIndex = (_nextIndex + 1) % poolSize;
     return particle;
   }
 
@@ -73,8 +100,11 @@ class ParticlePool {
       p.y += p.vy * dt;
       p.rotation += p.angularVelocity * dt;
 
-      // Apply gravity to dirt/debris particles only
-      if (p.type == ParticleType.dirt || p.type == ParticleType.debris) {
+      // Apply gravity to physical particle types
+      if (p.type == ParticleType.dirt ||
+          p.type == ParticleType.debris ||
+          p.type == ParticleType.lava ||
+          p.type == ParticleType.explosion) {
         p.vy += 980 * dt; // pixel gravity
       }
     }

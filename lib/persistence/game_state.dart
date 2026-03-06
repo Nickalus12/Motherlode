@@ -1,11 +1,20 @@
+import 'package:motherlode/world/terrain_cell.dart';
+
+/// Save format version. Bump when the serialization layout changes.
+const int saveFormatVersion = 1;
+
 /// Full serializable game state model
 ///
 /// Captures all state needed to save and restore a game session:
 /// - Player stats (cash, upgrade levels, consumable counts)
 /// - Pod state (position, fuel, hull, cargo)
 /// - World seed (for regeneration)
+/// - Modified chunk terrain data
 /// - Depth records
 class GameState {
+  // Save format
+  int version;
+
   // World
   int worldSeed;
 
@@ -39,16 +48,21 @@ class GameState {
   double maxDepthReached;
   double totalOreValue;
   int totalCellsDrilled;
-  bool hasAncientScroll;
+  int ancientScrollCount;
+  List<double> reachedMilestones;
 
   // NG+ tracking
   int ngPlusLevel;
+
+  // Modified terrain chunks (key = "chunkX,chunkY")
+  Map<String, List<List<TerrainCell>>> modifiedChunks;
 
   // Timestamps
   DateTime savedAt;
   Duration playTime;
 
   GameState({
+    this.version = saveFormatVersion,
     this.worldSeed = 0,
     this.cash = 0,
     this.drillLevel = 0,
@@ -70,19 +84,24 @@ class GameState {
     this.hull = 10,
     this.maxHull = 10,
     Map<String, int>? cargoInventory,
+    Map<String, List<List<TerrainCell>>>? modifiedChunks,
     this.maxDepthReached = 0,
     this.totalOreValue = 0,
     this.totalCellsDrilled = 0,
-    this.hasAncientScroll = false,
+    this.ancientScrollCount = 0,
+    List<double>? reachedMilestones,
     this.ngPlusLevel = 0,
     DateTime? savedAt,
     this.playTime = Duration.zero,
   })  : cargoInventory = cargoInventory ?? {},
+        modifiedChunks = modifiedChunks ?? {},
+        reachedMilestones = reachedMilestones ?? [],
         savedAt = savedAt ?? DateTime.now();
 
   /// Serialize to JSON-compatible map
   Map<String, dynamic> toMap() {
     return {
+      'version': version,
       'worldSeed': worldSeed,
       'cash': cash,
       'drillLevel': drillLevel,
@@ -107,16 +126,51 @@ class GameState {
       'maxDepthReached': maxDepthReached,
       'totalOreValue': totalOreValue,
       'totalCellsDrilled': totalCellsDrilled,
-      'hasAncientScroll': hasAncientScroll,
+      'ancientScrollCount': ancientScrollCount,
+      'reachedMilestones': reachedMilestones,
       'ngPlusLevel': ngPlusLevel,
       'savedAt': savedAt.toIso8601String(),
       'playTimeMs': playTime.inMilliseconds,
+      'modifiedChunks': _serializeChunks(modifiedChunks),
     };
+  }
+
+  /// Serialize modified chunks: key -> list of rows of cell maps.
+  static Map<String, dynamic> _serializeChunks(
+    Map<String, List<List<TerrainCell>>> chunks,
+  ) {
+    final result = <String, dynamic>{};
+    for (final entry in chunks.entries) {
+      result[entry.key] = [
+        for (final row in entry.value) [for (final cell in row) cell.toMap()],
+      ];
+    }
+    return result;
+  }
+
+  /// Deserialize chunk data from saved map.
+  static Map<String, List<List<TerrainCell>>> _deserializeChunks(
+    Map<String, dynamic>? data,
+  ) {
+    if (data == null) return {};
+    final result = <String, List<List<TerrainCell>>>{};
+    for (final entry in data.entries) {
+      final rows = entry.value as List<dynamic>;
+      result[entry.key] = [
+        for (final row in rows)
+          [
+            for (final cellMap in (row as List<dynamic>))
+              TerrainCell.fromMap(cellMap as Map<String, dynamic>),
+          ],
+      ];
+    }
+    return result;
   }
 
   /// Restore from serialized map
   factory GameState.fromMap(Map<String, dynamic> map) {
     return GameState(
+      version: map['version'] as int? ?? 0,
       worldSeed: map['worldSeed'] as int? ?? 0,
       cash: (map['cash'] as num?)?.toDouble() ?? 0,
       drillLevel: map['drillLevel'] as int? ?? 0,
@@ -140,10 +194,18 @@ class GameState {
       cargoInventory: (map['cargoInventory'] as Map<String, dynamic>?)
               ?.map((k, v) => MapEntry(k, v as int)) ??
           {},
+      modifiedChunks: _deserializeChunks(
+        map['modifiedChunks'] as Map<String, dynamic>?,
+      ),
       maxDepthReached: (map['maxDepthReached'] as num?)?.toDouble() ?? 0,
       totalOreValue: (map['totalOreValue'] as num?)?.toDouble() ?? 0,
       totalCellsDrilled: map['totalCellsDrilled'] as int? ?? 0,
-      hasAncientScroll: map['hasAncientScroll'] as bool? ?? false,
+      ancientScrollCount: map['ancientScrollCount'] as int? ??
+          (map['hasAncientScroll'] == true ? 1 : 0),
+      reachedMilestones: (map['reachedMilestones'] as List<dynamic>?)
+              ?.map((v) => (v as num).toDouble())
+              .toList() ??
+          [],
       ngPlusLevel: map['ngPlusLevel'] as int? ?? 0,
       savedAt: map['savedAt'] != null
           ? DateTime.parse(map['savedAt'] as String)
@@ -160,6 +222,7 @@ class GameState {
     double? cash,
   }) {
     return GameState(
+      version: version,
       worldSeed: worldSeed ?? this.worldSeed,
       cash: cash ?? this.cash,
       drillLevel: drillLevel,
@@ -181,10 +244,12 @@ class GameState {
       hull: hull,
       maxHull: maxHull,
       cargoInventory: Map.from(cargoInventory),
+      modifiedChunks: Map.from(modifiedChunks),
       maxDepthReached: maxDepthReached,
       totalOreValue: totalOreValue,
       totalCellsDrilled: totalCellsDrilled,
-      hasAncientScroll: hasAncientScroll,
+      ancientScrollCount: ancientScrollCount,
+      reachedMilestones: List.from(reachedMilestones),
       ngPlusLevel: ngPlusLevel,
       savedAt: savedAt,
       playTime: playTime,

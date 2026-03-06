@@ -1,4 +1,5 @@
 import 'package:flame/components.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 
 import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/utils/constants.dart';
@@ -15,6 +16,7 @@ class FuelSystem extends Component {
 
   // Warning flags
   bool _lowFuelWarningActive = false;
+  bool _fuelDeathTriggered = false;
 
   FuelSystem({required this.game});
 
@@ -25,10 +27,26 @@ class FuelSystem extends Component {
     currentFuel = maxFuel;
   }
 
+  @override
+  void update(double dt) {
+    super.update(dt);
+
+    if (currentFuel <= 0 &&
+        !game.isAtSurface &&
+        !game.isGameOver &&
+        !_fuelDeathTriggered) {
+      _fuelDeathTriggered = true;
+      game.triggerGameOver();
+      game.particleSystem.emitExplosionDebris(game.pod.position, 5);
+      game.audioManager.playExplosion();
+      game.earthquakeSystem.startShake(0.8, 0.6);
+      HapticFeedback.heavyImpact();
+    }
+  }
+
   /// Current fuel as a ratio (0.0 to 1.0)
-  double get fuelRatio => maxFuel > 0
-      ? (currentFuel / maxFuel).clamp(0.0, 1.0)
-      : 0.0;
+  double get fuelRatio =>
+      maxFuel > 0 ? (currentFuel / maxFuel).clamp(0.0, 1.0) : 0.0;
 
   /// Whether any fuel remains
   bool get hasFuel => currentFuel > 0;
@@ -43,6 +61,7 @@ class FuelSystem extends Component {
     // Check low fuel warning
     if (isLowFuel && !_lowFuelWarningActive) {
       _lowFuelWarningActive = true;
+      game.audioManager.playFuelWarning();
     } else if (!isLowFuel && _lowFuelWarningActive) {
       _lowFuelWarningActive = false;
     }

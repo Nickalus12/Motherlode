@@ -148,7 +148,8 @@ class ParticleSystem extends Component {
 
     // Render dust
     for (final d in _dustParticles) {
-      paint.color = const Color(0xFFFFFFFF).withValues(alpha: d.lifeRatio * 0.08);
+      paint.color =
+          const Color(0xFFFFFFFF).withValues(alpha: d.lifeRatio * 0.08);
       canvas.drawCircle(Offset(d.x, d.y), d.size, paint);
     }
 

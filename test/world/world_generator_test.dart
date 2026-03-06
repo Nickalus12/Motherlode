@@ -6,8 +6,6 @@ import 'dart:math';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:motherlode/data/creature_definitions.dart';
 import 'package:motherlode/utils/constants.dart';
-import 'package:motherlode/world/biome.dart';
-import 'package:motherlode/world/ore_registry.dart';
 import 'package:motherlode/world/terrain_cell.dart';
 import 'package:motherlode/world/world_generator.dart';
 
@@ -16,7 +14,7 @@ void main() {
   Map<String, List<List<TerrainCell>>> generateWorld(int seed,
       {int chunkRadius = 1}) {
     final gen = WorldGenerator(seed: seed);
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
     final totalDepthTiles =
         (GameConstants.bossDepth / GameConstants.feetPerTile).ceil() + 10;
     final totalChunksY = (totalDepthTiles / size).ceil();
@@ -33,7 +31,7 @@ void main() {
   // Helper: get cell at world tile coordinates from chunk map
   TerrainCell? getCell(
       Map<String, List<List<TerrainCell>>> chunks, int wx, int wy) {
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
     final cx = wx >= 0 ? wx ~/ size : -(((-wx - 1) ~/ size) + 1);
     final cy = wy >= 0 ? wy ~/ size : -(((-wy - 1) ~/ size) + 1);
     final lx = ((wx % size) + size) % size;
@@ -63,7 +61,8 @@ void main() {
                 reason: 'Ore type mismatch at chunk($cx,$cy) local($x,$y)');
             expect(grid1[y][x].hasCreatureSpawn,
                 equals(grid2[y][x].hasCreatureSpawn),
-                reason: 'Creature spawn mismatch at chunk($cx,$cy) local($x,$y)');
+                reason:
+                    'Creature spawn mismatch at chunk($cx,$cy) local($x,$y)');
           }
         }
       }
@@ -95,15 +94,14 @@ void main() {
 
       // Allow up to 2 blocked rows (player can drill through thin walls)
       expect(blockedCount, lessThanOrEqualTo(2),
-          reason:
-              'Seed $seed has $blockedCount blocked rows (max 2 allowed)');
+          reason: 'Seed $seed has $blockedCount blocked rows (max 2 allowed)');
     }
   });
 
   // 3. BIOME BOUNDARIES: Correct ores at correct depths
   test('3. Biome-appropriate ores spawn at correct depths', () {
     final chunks = generateWorld(12345, chunkRadius: 2);
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
     final totalDepthTiles =
         (GameConstants.maxDepth / GameConstants.feetPerTile).ceil();
 
@@ -160,7 +158,7 @@ void main() {
     for (int seedIdx = 0; seedIdx < 10; seedIdx++) {
       final seed = seedIdx * 777 + 1;
       final chunks = generateWorld(seed);
-      final size = GameConstants.chunkSize;
+      const size = GameConstants.chunkSize;
 
       for (final entry in chunks.entries) {
         final parts = entry.key.split(',');
@@ -174,11 +172,9 @@ void main() {
           for (int lx = 0; lx < size; lx++) {
             final cell = grid[ly][lx];
             if (cell.isSolid || cell.type == CellType.ore) {
-              solidCountByBiome[biome] =
-                  (solidCountByBiome[biome] ?? 0) + 1;
+              solidCountByBiome[biome] = (solidCountByBiome[biome] ?? 0) + 1;
               if (cell.type == CellType.ore) {
-                oreCountByBiome[biome] =
-                    (oreCountByBiome[biome] ?? 0) + 1;
+                oreCountByBiome[biome] = (oreCountByBiome[biome] ?? 0) + 1;
               }
             }
           }
@@ -194,9 +190,11 @@ void main() {
       // Surface may have low ore density due to shallow depth
       final minDensity = biome == 'Surface' ? 0.0 : 0.03;
       expect(density, greaterThanOrEqualTo(minDensity),
-          reason: '$biome ore density too low: ${(density * 100).toStringAsFixed(1)}%');
+          reason:
+              '$biome ore density too low: ${(density * 100).toStringAsFixed(1)}%');
       expect(density, lessThanOrEqualTo(0.12),
-          reason: '$biome ore density too high: ${(density * 100).toStringAsFixed(1)}%');
+          reason:
+              '$biome ore density too high: ${(density * 100).toStringAsFixed(1)}%');
     }
   });
 
@@ -209,7 +207,7 @@ void main() {
     for (int seedIdx = 0; seedIdx < 3; seedIdx++) {
       final seed = seedIdx * 5000 + 100;
       final chunks = generateWorld(seed);
-      final size = GameConstants.chunkSize;
+      const size = GameConstants.chunkSize;
 
       for (final entry in chunks.entries) {
         final parts = entry.key.split(',');
@@ -247,7 +245,7 @@ void main() {
   // 6. NO ISOLATED CELLS
   test('6. No orphaned solid cells with 0 solid neighbors', () {
     final gen = WorldGenerator(seed: 12345);
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
 
     for (int cy = 0; cy < 5; cy++) {
       final grid = gen.generateChunk(0, cy);
@@ -268,8 +266,7 @@ void main() {
 
           // After CA passes, no solid cell should have 0 solid neighbors
           expect(solidNeighbors, greaterThan(0),
-              reason:
-                  'Isolated solid cell at chunk(0,$cy) local($x,$y)');
+              reason: 'Isolated solid cell at chunk(0,$cy) local($x,$y)');
         }
       }
     }
@@ -278,7 +275,7 @@ void main() {
   // 7. CHUNK BOUNDARIES
   test('7. No seams between adjacent chunks', () {
     final gen = WorldGenerator(seed: 42);
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
 
     // Generate a 2x2 grid of chunks
     final chunks = <String, List<List<TerrainCell>>>{};
@@ -304,8 +301,7 @@ void main() {
     final leftRatio = solidLeftEdge / size;
     final rightRatio = solidRightEdge / size;
     expect((leftRatio - rightRatio).abs(), lessThan(0.3),
-        reason:
-            'Horizontal seam detected: left=$leftRatio right=$rightRatio');
+        reason: 'Horizontal seam detected: left=$leftRatio right=$rightRatio');
 
     // Check vertical seam
     final top = chunks['0,0']!;
@@ -319,14 +315,13 @@ void main() {
     final topRatio = solidTopEdge / size;
     final bottomRatio = solidBottomEdge / size;
     expect((topRatio - bottomRatio).abs(), lessThan(0.3),
-        reason:
-            'Vertical seam detected: top=$topRatio bottom=$bottomRatio');
+        reason: 'Vertical seam detected: top=$topRatio bottom=$bottomRatio');
   });
 
   // 8. ORE VEIN CONNECTIVITY
   test('8. Ore veins are connected blobs, not scattered singles', () {
     final gen = WorldGenerator(seed: 42);
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
 
     int totalVeins = 0;
     int totalOreCells = 0;
@@ -388,7 +383,7 @@ void main() {
   // 9. BOSS ARENA INTEGRITY
   test('9. Boss arena is always intact and clear', () {
     final gen = WorldGenerator(seed: 12345);
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
 
     final arenaMinX = WorldGenerator.bossArenaMinX;
     final arenaMaxX = WorldGenerator.bossArenaMaxX;
@@ -426,7 +421,7 @@ void main() {
   // 10. CREATURE SPAWN VALIDITY
   test('10. Creatures spawn in correct zones and in empty cells', () {
     final chunks = generateWorld(42);
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
 
     for (final entry in chunks.entries) {
       final parts = entry.key.split(',');
@@ -449,8 +444,7 @@ void main() {
               reason: 'Creature spawn too shallow: ${depthFeet}ft');
 
           // Verify creatures available at this depth exist
-          final available =
-              CreatureDefinitions.getCreaturesAtDepth(depthFeet);
+          final available = CreatureDefinitions.getCreaturesAtDepth(depthFeet);
           expect(available, isNotEmpty,
               reason:
                   'Creature spawn at ${depthFeet}ft but no creatures available');
@@ -462,7 +456,7 @@ void main() {
   // 11. SPECIAL COLLECTIBLE PLACEMENT
   test('11. Collectibles spawn at valid depths', () {
     final chunks = generateWorld(12345, chunkRadius: 2);
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
     int ancientScrollCount = 0;
 
     for (final entry in chunks.entries) {
@@ -507,7 +501,7 @@ void main() {
     final stopwatch = Stopwatch()..start();
 
     final gen = WorldGenerator(seed: 99999);
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
     final totalDepthTiles =
         (GameConstants.maxDepth / GameConstants.feetPerTile).ceil();
     final totalChunksY = (totalDepthTiles / size).ceil();

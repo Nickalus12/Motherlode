@@ -1,7 +1,6 @@
 import 'dart:math';
 import 'dart:ui';
 
-import 'package:flame/components.dart';
 import 'package:flame_forge2d/flame_forge2d.dart';
 
 import 'package:motherlode/entities/pod/pod.dart';
@@ -137,7 +136,10 @@ abstract class Creature extends BodyComponent with ContactCallbacks {
           state = CreatureState.attack;
           _stateTimer = 0;
         }
-        if (distToPod > GameConstants.creatureChaseRange * 1.5 / GameConstants.pixelsPerMeter) {
+        if (distToPod >
+            GameConstants.creatureChaseRange *
+                1.5 /
+                GameConstants.pixelsPerMeter) {
           state = CreatureState.wander;
           _stateTimer = 0;
         }
@@ -202,7 +204,8 @@ abstract class Creature extends BodyComponent with ContactCallbacks {
 
   /// Whether this creature should chase the pod
   bool shouldChase(double distToPod) {
-    return distToPod < GameConstants.creatureChaseRange / GameConstants.pixelsPerMeter;
+    return distToPod <
+        GameConstants.creatureChaseRange / GameConstants.pixelsPerMeter;
   }
 
   /// Whether this creature should flee from the pod

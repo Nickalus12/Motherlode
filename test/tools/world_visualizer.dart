@@ -21,7 +21,7 @@ void main() {
       print('=' * 120);
 
       final gen = WorldGenerator(seed: seed);
-      final size = GameConstants.chunkSize;
+      const size = GameConstants.chunkSize;
 
       // Generate enough chunks to cover surface to boss depth
       // 120 chars wide ≈ 4 chunks horizontal, 60 chars tall sampled from full depth
@@ -74,16 +74,14 @@ void main() {
             } else if (cell.type == CellType.ore) {
               oreCells++;
               oreByBiome[biomeName] = (oreByBiome[biomeName] ?? 0) + 1;
-              solidByBiome[biomeName] =
-                  (solidByBiome[biomeName] ?? 0) + 1;
+              solidByBiome[biomeName] = (solidByBiome[biomeName] ?? 0) + 1;
             } else if (cell.type == CellType.lava) {
               lavaCells++;
             } else if (cell.type == CellType.gas) {
               gasCells++;
               emptyByBiome[biomeName] = (emptyByBiome[biomeName] ?? 0) + 1;
             } else {
-              solidByBiome[biomeName] =
-                  (solidByBiome[biomeName] ?? 0) + 1;
+              solidByBiome[biomeName] = (solidByBiome[biomeName] ?? 0) + 1;
             }
 
             if (cell.hasCreatureSpawn) {
@@ -110,7 +108,7 @@ void main() {
       // Print ASCII visualization (120 wide x 60 tall, sampled)
       const viewWidth = 120;
       const viewHeight = 60;
-      final startWorldX = -viewWidth ~/ 2;
+      const startWorldX = -viewWidth ~/ 2;
       final sampleStepY = max(1, totalDepthTiles ~/ viewHeight);
 
       for (int vy = 0; vy < viewHeight; vy++) {
@@ -122,12 +120,10 @@ void main() {
         for (int vx = 0; vx < viewWidth; vx++) {
           final worldX = startWorldX + vx;
 
-          final cx = worldX >= 0
-              ? worldX ~/ size
-              : -(((-worldX - 1) ~/ size) + 1);
-          final cy = worldY >= 0
-              ? worldY ~/ size
-              : -(((-worldY - 1) ~/ size) + 1);
+          final cx =
+              worldX >= 0 ? worldX ~/ size : -(((-worldX - 1) ~/ size) + 1);
+          final cy =
+              worldY >= 0 ? worldY ~/ size : -(((-worldY - 1) ~/ size) + 1);
           final lx = ((worldX % size) + size) % size;
           final ly = ((worldY % size) + size) % size;
 
@@ -211,13 +207,7 @@ void main() {
           '  Cave Worms: $caveWormCount, Rock Crabs: $rockCrabCount, Gas Spores: $gasSporeCount, Lava Eels: $lavaEelCount');
 
       // Per-biome stats
-      for (final biome in [
-        'Surface',
-        'Mid',
-        'Deep',
-        'Volcanic',
-        'Hell'
-      ]) {
+      for (final biome in ['Surface', 'Mid', 'Deep', 'Volcanic', 'Hell']) {
         final empty = emptyByBiome[biome] ?? 0;
         final solid = solidByBiome[biome] ?? 0;
         final ore = oreByBiome[biome] ?? 0;
@@ -234,9 +224,7 @@ void main() {
       for (int y = 0; y < totalDepthTiles; y += 5) {
         bool foundEmpty = false;
         for (int x = -10; x <= 10; x++) {
-          final cx = x >= 0
-              ? x ~/ size
-              : -(((-x - 1) ~/ size) + 1);
+          final cx = x >= 0 ? x ~/ size : -(((-x - 1) ~/ size) + 1);
           final cy = y ~/ size;
           final lx = ((x % size) + size) % size;
           final ly = y % size;

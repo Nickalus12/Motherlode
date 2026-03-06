@@ -17,7 +17,7 @@ void main() {
     final gen2 = WorldGenerator(seed: 42);
     final grid2 = gen2.generateChunk(0, 0);
 
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
     for (int y = 0; y < size; y++) {
       for (int x = 0; x < size; x++) {
         expect(grid1[y][x].type, equals(grid2[y][x].type));
@@ -31,7 +31,7 @@ void main() {
     final gridA = gen.generateChunk(0, 0);
     final gridB = gen.generateChunk(5, 10);
 
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
     int differences = 0;
     for (int y = 0; y < size; y++) {
       for (int x = 0; x < size; x++) {
@@ -52,7 +52,7 @@ void main() {
       final grid1 = gen1.generateChunk(i, i * 2);
       final grid2 = gen2.generateChunk(i, i * 2);
 
-      final size = GameConstants.chunkSize;
+      const size = GameConstants.chunkSize;
       for (int y = 0; y < size; y++) {
         for (int x = 0; x < size; x++) {
           expect(grid1[y][x].type, equals(grid2[y][x].type));
@@ -66,8 +66,8 @@ void main() {
   test('4. Only 9 chunks needed in a 3x3 radius', () {
     // ChunkManager loads chunkLoadRadius = 3 in each direction = 7x7 = 49
     // But for the "3x3 around pod" requirement mentioned in spec:
-    final loadRadius = GameConstants.chunkLoadRadius; // = 3
-    final expectedCount = (2 * loadRadius + 1) * (2 * loadRadius + 1);
+    const loadRadius = GameConstants.chunkLoadRadius; // = 3
+    const expectedCount = (2 * loadRadius + 1) * (2 * loadRadius + 1);
     expect(expectedCount, equals(49)); // 7x7 with radius 3
 
     // Verify constant is accessible
@@ -77,7 +77,7 @@ void main() {
   // 5. Unloaded chunk data preserved for re-entry
   test('5. Chunk data can be cached and re-used after unload', () {
     final gen = WorldGenerator(seed: 42);
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
 
     // Generate initial chunk
     final grid = gen.generateChunk(0, 5);
@@ -108,7 +108,7 @@ void main() {
 
   // 6. Cell removal at world coordinates resolves correctly
   test('6. World-to-chunk coordinate mapping is correct', () {
-    final size = GameConstants.chunkSize;
+    const size = GameConstants.chunkSize;
 
     // Test positive coordinates
     int gridX = 50;

@@ -1,6 +1,5 @@
-import 'dart:math';
-
 import 'package:flame_forge2d/flame_forge2d.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 
 import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/utils/constants.dart';
@@ -54,13 +53,17 @@ class ExplosionSystem {
     // 2. Apply radial impulse to all dynamic bodies
     _applyRadialImpulse(position, radius.toDouble() * 2, force);
 
-    // 3. Emit explosion particles
+    // 3. Emit explosion particles + SFX
+    game.audioManager.playExplosion();
     game.particleSystem.emitExplosionDebris(position, radius);
 
-    // 4. Screen shake
-    _applyCameraShake(radius == GameConstants.dynamiteRadius
+    // 4. Screen shake (trauma-based with decay) + haptic
+    final trauma = radius == GameConstants.dynamiteRadius
         ? GameConstants.dynamiteCameraTrauma
-        : GameConstants.plasticCameraTrauma);
+        : GameConstants.plasticCameraTrauma;
+    game.earthquakeSystem.startShake(trauma, 0.6);
+    game.earthquakeSystem.triggerExplosionFlash();
+    HapticFeedback.heavyImpact();
 
     // 5. Check for collapse around explosion
     game.earthquakeSystem.checkCollapseArea(gridX, gridY, radius + 2);
@@ -103,25 +106,6 @@ class ExplosionSystem {
       },
     ), aabb);
   }
-
-  /// Apply camera shake effect
-  void _applyCameraShake(double trauma) {
-    // Simple camera shake by applying small random offset
-    final random = Random();
-    final offsetX = (random.nextDouble() - 0.5) * trauma * 2;
-    final offsetY = (random.nextDouble() - 0.5) * trauma * 2;
-
-    game.camera.viewfinder.position.x += offsetX;
-    game.camera.viewfinder.position.y += offsetY;
-
-    // Decay back to normal over time
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (!game.isGameOver) {
-        game.camera.viewfinder.position.x -= offsetX;
-        game.camera.viewfinder.position.y -= offsetY;
-      }
-    });
-  }
 }
 
 class _ChainExplosion {
@@ -140,7 +124,8 @@ class _ChainExplosion {
 class _ExplosionQueryCallback extends QueryCallback {
   final bool Function(Fixture fixture) _reportFixture;
 
-  _ExplosionQueryCallback({required bool Function(Fixture fixture) reportFixture})
+  _ExplosionQueryCallback(
+      {required bool Function(Fixture fixture) reportFixture})
       : _reportFixture = reportFixture;
 
   @override

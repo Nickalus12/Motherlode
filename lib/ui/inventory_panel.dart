@@ -158,7 +158,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
                     itemCount: items.length,
                     itemBuilder: (context, index) {
                       final item = items[index];
-                      return _buildOreRow(item);
+                      return _buildOreRow(item, context);
                     },
                   ),
           ),
@@ -169,18 +169,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
             SizedBox(
               width: double.infinity,
               child: GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _lastSaleValue = cargo.totalValue;
-                    final saleValue = cargo.sellAll();
-                    widget.game.addCash(saleValue);
-                    widget.game.pod.updateMass();
-                    _justSold = true;
-                  });
-                  Future.delayed(const Duration(seconds: 3), () {
-                    if (mounted) setState(() => _justSold = false);
-                  });
-                },
+                onTap: () => _confirmSellAll(context, cargo),
                 child: Container(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   decoration: BoxDecoration(
@@ -243,7 +232,86 @@ class _InventoryPanelState extends State<InventoryPanel> {
     );
   }
 
-  Widget _buildOreRow(CargoItem item) {
+  Future<void> _confirmSellAll(BuildContext context, CargoSystem cargo) async {
+    final totalValue = cargo.totalValue;
+    final itemCount = cargo.getCargoBreakdown().length;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C1C28),
+        title: const Text('Sell All Minerals?',
+            style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Process $itemCount ore types for \$${_formatCash(totalValue)}?',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white38)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('SELL ALL',
+                style: TextStyle(
+                    color: Colors.amber, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      setState(() {
+        _lastSaleValue = totalValue;
+        final saleValue = cargo.sellAll();
+        widget.game.addCash(saleValue);
+        widget.game.pod.updateMass();
+        widget.game.audioManager.playSell();
+        _justSold = true;
+      });
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) setState(() => _justSold = false);
+      });
+    }
+  }
+
+  void _sellSingleOre(BuildContext context, CargoItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1C1C28),
+        title: Text('Sell ${item.ore.name}?',
+            style: const TextStyle(color: Colors.white)),
+        content: Text(
+          'Sell ${item.count}x ${item.ore.name} for \$${_formatCash(item.totalValue)}?',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.white38)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('SELL',
+                style: TextStyle(
+                    color: Colors.amber, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) {
+      setState(() {
+        final saleValue = widget.game.pod.cargoSystem.sellOre(item.ore.name);
+        widget.game.addCash(saleValue);
+        widget.game.pod.updateMass();
+        widget.game.audioManager.playSell();
+      });
+    }
+  }
+
+  Widget _buildOreRow(CargoItem item, BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -283,8 +351,8 @@ class _InventoryPanelState extends State<InventoryPanel> {
                       alignment: Alignment.topLeft,
                       widthFactor: 0.25,
                       heightFactor: 0.25,
-                      child: Image.asset(
-                          'assets/images/${item.ore.spritePath}'),
+                      child:
+                          Image.asset('assets/images/${item.ore.spritePath}'),
                     ),
                   ),
                 ),
@@ -362,6 +430,28 @@ class _InventoryPanelState extends State<InventoryPanel> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(width: 8),
+
+          // Per-ore sell button
+          GestureDetector(
+            onTap: () => _sellSingleOre(context, item),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.amber.shade800.withValues(alpha: 0.8),
+                    Colors.orange.shade700.withValues(alpha: 0.8),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: Colors.amber.withValues(alpha: 0.4),
+                ),
+              ),
+              child: const Icon(Icons.sell, color: Colors.white, size: 16),
+            ),
           ),
         ],
       ),

@@ -50,7 +50,10 @@ class SaveManager {
     }
   }
 
-  /// Apply loaded state to a game instance
+  /// Apply loaded state to a game instance.
+  ///
+  /// Must be called before [ChunkManager.forceLoadAroundSpawn] so that
+  /// modified chunk data is injected into the chunk cache first.
   static void applyState(MotherlodeGame game, GameState state) {
     // Player stats
     game.playerCash = state.cash;
@@ -75,8 +78,19 @@ class SaveManager {
     game.hullSystem.currentHull = state.hull;
     game.hullSystem.maxHull = state.maxHull;
 
-    // Depth record
+    // Depth record and milestones
     game.depthSystem.maxDepthReached = state.maxDepthReached;
+    game.depthSystem.reachedMilestones
+      ..clear()
+      ..addAll(state.reachedMilestones.map((v) => v.toDouble()));
+
+    // Collectibles
+    game.ancientScrollCount = state.ancientScrollCount;
+
+    // Inject modified chunk data into ChunkManager cache
+    if (state.modifiedChunks.isNotEmpty) {
+      game.chunkManager.importModifiedChunks(state.modifiedChunks);
+    }
   }
 
   /// Capture current game state
@@ -103,7 +117,10 @@ class SaveManager {
       hull: game.hullSystem.currentHull,
       maxHull: game.hullSystem.maxHull,
       cargoInventory: Map.from(game.pod.cargoSystem.inventory),
+      modifiedChunks: game.chunkManager.exportModifiedChunks(),
       maxDepthReached: game.depthSystem.maxDepthReached,
+      ancientScrollCount: game.ancientScrollCount,
+      reachedMilestones: game.depthSystem.reachedMilestones.toList(),
     );
   }
 

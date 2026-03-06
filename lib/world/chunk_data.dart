@@ -1,31 +1,6 @@
 import 'package:motherlode/world/ore_registry.dart';
 import 'package:motherlode/world/terrain_cell.dart';
 
-/// Plain data object for chunk generation parameters.
-/// Can be passed to compute() isolates (no Flame/Flutter dependencies).
-class ChunkGenerationParams {
-  final int seed;
-  final int chunkX;
-  final int chunkY;
-
-  const ChunkGenerationParams({
-    required this.seed,
-    required this.chunkX,
-    required this.chunkY,
-  });
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is ChunkGenerationParams &&
-          seed == other.seed &&
-          chunkX == other.chunkX &&
-          chunkY == other.chunkY;
-
-  @override
-  int get hashCode => Object.hash(seed, chunkX, chunkY);
-}
-
 /// Plain data result from chunk generation.
 /// Contains serializable cell data that can cross isolate boundaries.
 class ChunkData {

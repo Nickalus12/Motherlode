@@ -1,5 +1,3 @@
-#version 460 core
-precision highp float;
 #include <flutter/runtime_effect.glsl>
 
 // Grid dimensions
@@ -16,8 +14,6 @@ uniform float uDu;
 uniform float uDv;
 // Previous state texture (R=U, G=V)
 uniform sampler2D uState;
-
-out vec4 fragColor;
 
 void main() {
   vec2 uv = FlutterFragCoord().xy / uSize;

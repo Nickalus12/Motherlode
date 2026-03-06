@@ -11,15 +11,15 @@ import 'package:motherlode/world/terrain_cell.dart';
 
 /// Geological layer types ordered by increasing depth.
 enum StratumType {
-  topsoil,      // 0-200ft    — loose, sandy, easy drilling
-  sandstone,    // 100-400ft  — compressed sand
-  limestone,    // 300-800ft  — calcium-rich, fossils
-  shale,        // 600-1200ft — layered, oil-bearing
-  granite,      // 1000-2500ft — hard igneous
-  basalt,       // 2000-4000ft — volcanic, dense
+  topsoil, // 0-200ft    — loose, sandy, easy drilling
+  sandstone, // 100-400ft  — compressed sand
+  limestone, // 300-800ft  — calcium-rich, fossils
+  shale, // 600-1200ft — layered, oil-bearing
+  granite, // 1000-2500ft — hard igneous
+  basalt, // 2000-4000ft — volcanic, dense
   obsidianFlow, // 3500-5500ft — volcanic glass
-  mantleRock,   // 5000-7000ft — extreme pressure
-  hellstone,    // 6500-7500ft — supernatural
+  mantleRock, // 5000-7000ft — extreme pressure
+  hellstone, // 6500-7500ft — supernatural
 }
 
 /// A geological fault line that vertically displaces strata.

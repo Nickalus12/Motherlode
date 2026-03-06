@@ -30,11 +30,15 @@ class Pod extends BodyComponent with ContactCallbacks {
   // State
   PodState state = PodState.idle;
 
-  // Input state
+  // Input state (binary — keyboard)
   bool thrustUp = false;
   bool thrustLeft = false;
   bool thrustRight = false;
   bool drillDown = false;
+
+  // Analog input state (0.0-1.0 magnitude, set by touch controller)
+  double thrustAnalogX = 0.0; // -1.0 left, +1.0 right
+  double thrustAnalogY = 0.0; // -1.0 up, +1.0 down
 
   // Sub-systems
   late final DrillSystem drillSystem;
@@ -69,18 +73,16 @@ class Pod extends BodyComponent with ContactCallbacks {
     final body = world.createBody(bodyDef);
 
     // Pod shape
-    final shape = PolygonShape()
-      ..setAsBoxXY(0.9, 1.1);
+    final shape = PolygonShape()..setAsBoxXY(0.9, 1.1);
 
     body.createFixture(FixtureDef(shape)
       ..density = GameConstants.podBaseMass / (1.8 * 2.2)
-      ..friction = 0.5
-      ..restitution = 0.1
+      ..friction = 0.6
+      ..restitution = 0.0
       ..userData = this);
 
     // Ground sensor
-    final sensorShape = PolygonShape()
-      ..setAsBox(0.7, 0.1, Vector2(0, 1.1), 0);
+    final sensorShape = PolygonShape()..setAsBox(0.7, 0.1, Vector2(0, 1.1), 0);
 
     body.createFixture(FixtureDef(sensorShape)
       ..isSensor = true
@@ -154,19 +156,25 @@ class Pod extends BodyComponent with ContactCallbacks {
 
     // Thrust scaled to mass so controls feel consistent regardless of cargo.
     // gravity = 9.8 m/s², so thrustAccel > 9.8 means pod can fly upward.
-    final thrustAccel = 18.0;
+    // Scales with engine power upgrades (base 3000.0).
+    final thrustAccel = 18.0 * (enginePower / 3000.0);
 
-    // Engine thrust
-    if (thrustUp && _game.fuelSystem.hasFuel) {
-      body.applyForce(Vector2(0, -body.mass * thrustAccel));
-    }
+    // Determine thrust magnitude: analog (touch) takes priority over binary (keyboard)
+    final hasAnalog = thrustAnalogX != 0.0 || thrustAnalogY != 0.0;
+    final forceX = hasAnalog
+        ? thrustAnalogX
+        : (thrustLeft ? -1.0 : 0.0) + (thrustRight ? 1.0 : 0.0);
+    final forceY = hasAnalog ? thrustAnalogY : (thrustUp ? -1.0 : 0.0);
 
-    // Horizontal movement
-    if (thrustLeft && _game.fuelSystem.hasFuel) {
-      body.applyForce(Vector2(-body.mass * thrustAccel * 0.6, 0));
-    }
-    if (thrustRight && _game.fuelSystem.hasFuel) {
-      body.applyForce(Vector2(body.mass * thrustAccel * 0.6, 0));
+    if (_game.fuelSystem.hasFuel) {
+      if (forceY < 0) {
+        body.applyForce(Vector2(0, body.mass * thrustAccel * forceY));
+        _game.audioManager.playEngineThrust();
+      }
+      if (forceX != 0) {
+        body.applyForce(Vector2(body.mass * thrustAccel * 0.6 * forceX, 0));
+        _game.audioManager.playEngineThrust();
+      }
     }
 
     // Drilling
@@ -224,14 +232,14 @@ class Pod extends BodyComponent with ContactCallbacks {
     }
     if (mainFixture == null) return;
 
-    final area = 1.8 * 2.2; // Pod width * height
+    const area = 1.8 * 2.2; // Pod width * height
     final totalMass = GameConstants.podBaseMass + cargoSystem.currentWeight;
     final newDensity = totalMass / area;
 
     final newDef = FixtureDef(mainFixture.shape)
       ..density = newDensity
-      ..friction = 0.5
-      ..restitution = 0.1
+      ..friction = 0.6
+      ..restitution = 0.0
       ..userData = this;
 
     body.destroyFixture(mainFixture);

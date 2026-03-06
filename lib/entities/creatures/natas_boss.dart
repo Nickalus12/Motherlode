@@ -125,8 +125,7 @@ class NatasBoss extends Creature {
     }
 
     // Lava wave attack
-    if (_phaseTimer > 0 &&
-        _phaseTimer.remainder(_lavaWaveCooldown) < dt) {
+    if (_phaseTimer > 0 && _phaseTimer.remainder(_lavaWaveCooldown) < dt) {
       _lavaWaveAttack();
     }
   }
@@ -153,7 +152,8 @@ class NatasBoss extends Creature {
     }
 
     // More summons
-    if (_summonTimer >= _summonCooldown * 0.5 && _summonCount < _maxSummons + 2) {
+    if (_summonTimer >= _summonCooldown * 0.5 &&
+        _summonCount < _maxSummons + 2) {
       _summonTimer = 0;
       _summonRockCrab();
     }
@@ -235,10 +235,11 @@ class NatasBoss extends Creature {
       Future.delayed(Duration(milliseconds: i * 200), () {
         if (game.isMounted) {
           motherlodeGame.particleSystem.emitExplosionDebris(
-            position + Vector2(
-              (Random().nextDouble() - 0.5) * 3,
-              (Random().nextDouble() - 0.5) * 3,
-            ),
+            position +
+                Vector2(
+                  (Random().nextDouble() - 0.5) * 3,
+                  (Random().nextDouble() - 0.5) * 3,
+                ),
             4,
           );
         }
@@ -343,13 +344,13 @@ class NatasBoss extends Creature {
 
     // Health bar above
     final healthRatio = health / maxHealth;
-    final barWidth = 2.0;
-    final barHeight = 0.12;
-    final barY = -2.0;
+    const barWidth = 2.0;
+    const barHeight = 0.12;
+    const barY = -2.0;
 
     // Background
     canvas.drawRect(
-      Rect.fromLTWH(-barWidth / 2, barY, barWidth, barHeight),
+      const Rect.fromLTWH(-barWidth / 2, barY, barWidth, barHeight),
       Paint()..color = const Color(0x80000000),
     );
 

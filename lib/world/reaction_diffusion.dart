@@ -359,8 +359,8 @@ int _selectOreIndex(
 
   // Normalize concentration above threshold to 0.0-1.0 range
   // Cap at 1.0 since V values rarely exceed ~0.5
-  final normalized = ((concentration - threshold) / (0.5 - threshold))
-      .clamp(0.0, 1.0);
+  final normalized =
+      ((concentration - threshold) / (0.5 - threshold)).clamp(0.0, 1.0);
 
   // Bias toward common (index 0) with exponential falloff
   // Higher concentration = chance of rarer ore
@@ -384,7 +384,9 @@ void runReactionDiffusionForChunk({
   required int seed,
 }) {
   final depthFeet = chunkWorldY * 10.0; // Approximate feet per tile
-  final biome = BiomeRegistry.getBiomeAtDepth(depthFeet);
+  final centerX = chunkWorldX + chunkSize ~/ 2;
+  final biome =
+      BiomeRegistry.getBiomeAtPosition(depthFeet, centerX.toDouble(), seed);
   final patterns = biomeOrePatterns[biome.type];
   if (patterns == null) return;
 

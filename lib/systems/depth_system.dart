@@ -3,22 +3,49 @@ import 'package:flame/components.dart';
 import 'package:motherlode/utils/constants.dart';
 import 'package:motherlode/world/biome.dart';
 
+/// Depth milestones with names and cash bonuses.
+class DepthMilestone {
+  final double depth;
+  final String name;
+  final double cashBonus;
+
+  const DepthMilestone(this.depth, this.name, this.cashBonus);
+}
+
+/// All depth milestones in order.
+const depthMilestones = [
+  DepthMilestone(500, 'SHALLOW DEPTHS', 500),
+  DepthMilestone(1000, 'UNDERGROUND', 1500),
+  DepthMilestone(2000, 'DEEP EARTH', 5000),
+  DepthMilestone(3000, 'THE ABYSS', 15000),
+  DepthMilestone(5000, 'INFERNO', 50000),
+  DepthMilestone(7000, 'HELL\'S GATE', 150000),
+];
+
 /// Tracks the pod's depth, triggers biome transitions,
-/// and maintains depth records
+/// milestone celebrations, and maintains depth records
 class DepthSystem extends Component {
   double currentDepth = 0; // in feet
   double maxDepthReached = 0;
   BiomeType _currentBiome = BiomeType.surface;
   BiomeType? _previousBiome;
 
+  /// Set of milestone depths already reached (persisted across saves).
+  final Set<double> reachedMilestones = {};
+
   // Callback for biome transition events
   void Function(BiomeType newBiome)? onBiomeChange;
+
+  /// Callback when a new depth milestone is reached for the first time.
+  /// Passes the milestone and cash bonus awarded.
+  void Function(DepthMilestone milestone)? onMilestoneReached;
 
   /// Update depth based on pod's Y position in world units
   void updateDepth(double podWorldY) {
     // Convert world Y (tiles) to depth in feet
     // Positive Y = deeper underground
-    currentDepth = (podWorldY * GameConstants.feetPerTile).clamp(0, double.infinity);
+    currentDepth =
+        (podWorldY * GameConstants.feetPerTile).clamp(0, double.infinity);
 
     // Track maximum depth
     if (currentDepth > maxDepthReached) {
@@ -31,6 +58,19 @@ class DepthSystem extends Component {
       _previousBiome = _currentBiome;
       _currentBiome = newBiome;
       onBiomeChange?.call(newBiome);
+    }
+
+    // Check depth milestones
+    _checkMilestones();
+  }
+
+  void _checkMilestones() {
+    for (final milestone in depthMilestones) {
+      if (currentDepth >= milestone.depth &&
+          !reachedMilestones.contains(milestone.depth)) {
+        reachedMilestones.add(milestone.depth);
+        onMilestoneReached?.call(milestone);
+      }
     }
   }
 
@@ -47,8 +87,7 @@ class DepthSystem extends Component {
   String get currentBiomeName => BiomeRegistry.getBiomeName(currentDepth);
 
   /// Whether the pod is near the boss zone
-  bool get isNearBoss =>
-      currentDepth >= GameConstants.bossDepth - 200;
+  bool get isNearBoss => currentDepth >= GameConstants.bossDepth - 200;
 
   /// Whether the pod has reached a new depth record
   bool get isNewDepthRecord => currentDepth >= maxDepthReached - 1;
@@ -61,6 +100,19 @@ class DepthSystem extends Component {
   Map<String, dynamic> toMap() {
     return {
       'maxDepth': maxDepthReached,
+      'milestones': reachedMilestones.toList(),
     };
+  }
+
+  /// Load milestone data from a save map.
+  void loadFromMap(Map<String, dynamic> map) {
+    maxDepthReached = (map['maxDepth'] as num?)?.toDouble() ?? 0;
+    final saved = map['milestones'];
+    if (saved is List) {
+      reachedMilestones.clear();
+      for (final v in saved) {
+        reachedMilestones.add((v as num).toDouble());
+      }
+    }
   }
 }

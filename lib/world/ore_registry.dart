@@ -285,24 +285,38 @@ class OreRegistry {
     return allOres.where((ore) => depthFeet >= ore.minDepth).toList();
   }
 
-  /// Select an ore type for spawning based on depth and rarity
-  /// Returns null if no ore should spawn at this location
+  /// Select an ore type for spawning based on depth and rarity.
+  /// Returns null if no ore should spawn at this location.
+  ///
+  /// [noiseValue] should be in [0, 1]. Common ores (low spawnRarity) occupy
+  /// wide probability bands; rare ores (high spawnRarity) get narrow ones.
   static OreType? selectOreForSpawn(double depthFeet, double noiseValue) {
     final available = getOresAtDepth(depthFeet);
     if (available.isEmpty) return null;
 
-    // Higher noise value = rarer ore selected
-    // Sort by spawn rarity ascending, find the one matching our noise threshold
+    // Sort by spawnRarity ascending (most common first).
     final sorted = List<OreType>.from(available)
       ..sort((a, b) => a.spawnRarity.compareTo(b.spawnRarity));
 
-    for (final ore in sorted.reversed) {
-      if (noiseValue >= ore.spawnRarity) {
+    // Build cumulative probability bands weighted by (1 - spawnRarity).
+    // Common ores (low rarity) get proportionally wider bands.
+    double totalWeight = 0.0;
+    for (final ore in sorted) {
+      totalWeight += 1.0 - ore.spawnRarity;
+    }
+
+    // Walk through cumulative thresholds; first ore whose cumulative band
+    // exceeds noiseValue * totalWeight wins.
+    double cumulative = 0.0;
+    final scaledNoise = noiseValue * totalWeight;
+    for (final ore in sorted) {
+      cumulative += 1.0 - ore.spawnRarity;
+      if (scaledNoise <= cumulative) {
         return ore;
       }
     }
 
-    // Default to most common ore at this depth
-    return sorted.first;
+    // Fallback (shouldn't reach here due to floating point)
+    return sorted.last;
   }
 }
