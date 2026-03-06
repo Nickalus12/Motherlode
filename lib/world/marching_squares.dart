@@ -1,5 +1,6 @@
 import 'dart:ui';
 
+import 'package:motherlode/data/ore_types.dart';
 import 'package:motherlode/utils/color_utils.dart';
 import 'package:motherlode/utils/constants.dart';
 import 'package:motherlode/world/stratigraphy.dart';
@@ -50,30 +51,36 @@ class MarchingSquaresPoly {
   final Color strokeColor;
 
   /// True if this polygon is fully interior (all 4 corners solid, case 15)
-  /// Used by renderer to skip strokes on interior polygons
   final bool isInterior;
+
+  /// True if this polygon contains ore (for animated shimmer effect)
+  final bool isOre;
+
+  /// True if this polygon contains lava (for animated glow effect)
+  final bool isLava;
 
   const MarchingSquaresPoly({
     required this.path,
     required this.fillColor,
     required this.strokeColor,
     this.isInterior = false,
+    this.isOre = false,
+    this.isLava = false,
   });
 }
 
-/// Marching Squares implementation for smooth organic terrain rendering
+/// Marching Squares with 2x subdivision for smooth organic terrain.
 ///
-/// For each 2x2 cell group, computes a 4-bit index (0-15) based on which
-/// corners are solid (SDF < 0). Maps each index to a polygon configuration,
-/// interpolates edge crossings using SDF values to find the zero-isosurface.
-///
-/// Supports border data from neighboring chunks for seamless edges at
-/// chunk boundaries. Each chunk processes its own interior plus the
-/// top and left boundary quads (to avoid double-processing).
+/// Bilinearly interpolates SDF values at half-cell positions to produce
+/// a mesh with 4x the polygon count but much smoother contours. The
+/// zero-isosurface is traced with sub-cell precision.
 class MarchingSquares {
   MarchingSquares._();
 
-  /// Generate the mesh for an entire chunk with optional neighbor border data
+  /// Subdivision factor: 2 = half-cell resolution (4x polygons)
+  static const int _subdiv = 2;
+
+  /// Generate the mesh for an entire chunk with 2x subdivided resolution
   static MarchingSquaresResult generateMesh({
     required List<List<TerrainCell>> cells,
     required int chunkX,
@@ -84,13 +91,12 @@ class MarchingSquares {
     final polygons = <MarchingSquaresPoly>[];
     final collisionSegments = <List<Offset>>[];
     final size = cells.length;
+    final step = 1.0 / _subdiv;
 
     // Cell accessor that handles border lookups
     TerrainCell? cellAt(int x, int y) {
-      // Interior cells
       if (x >= 0 && x < size && y >= 0 && y < size) return cells[y][x];
       if (borders == null) return null;
-      // Border cells from neighbors
       if (y == -1 && x >= 0 && x < size) return borders.topRow?[x];
       if (y == size && x >= 0 && x < size) return borders.bottomRow?[x];
       if (x == -1 && y >= 0 && y < size) return borders.leftCol?[y];
@@ -98,42 +104,236 @@ class MarchingSquares {
       return null;
     }
 
-    // Extended range: process top/left boundary quads when border data available
-    // Each chunk processes its top and left boundaries to avoid double-processing
+    // Bilinearly interpolate SDF at a fractional cell position
+    double sdfAt(double wx, double wy) {
+      final cx = wx.floor();
+      final cy = wy.floor();
+      final fx = wx - cx;
+      final fy = wy - cy;
+
+      final c00 = cellAt(cx, cy)?.sdf ?? 1.0;
+      final c10 = cellAt(cx + 1, cy)?.sdf ?? 1.0;
+      final c01 = cellAt(cx, cy + 1)?.sdf ?? 1.0;
+      final c11 = cellAt(cx + 1, cy + 1)?.sdf ?? 1.0;
+
+      return c00 * (1 - fx) * (1 - fy) +
+          c10 * fx * (1 - fy) +
+          c01 * (1 - fx) * fy +
+          c11 * fx * fy;
+    }
+
+    // Get the nearest real cell for type/color info
+    TerrainCell? nearestCell(double wx, double wy) {
+      final cx = (wx + 0.5).floor().clamp(0, size - 1);
+      final cy = (wy + 0.5).floor().clamp(0, size - 1);
+      return cellAt(cx, cy);
+    }
+
+    // Extended range with border handling
     final startX = (borders?.leftCol != null) ? -1 : 0;
     final startY = (borders?.topRow != null) ? -1 : 0;
-    // Standard end range for interior; bottom/right boundaries are the
-    // neighbor chunk's responsibility
     final endX = size - 2;
     final endY = size - 2;
 
-    for (int y = startY; y <= endY; y++) {
-      for (int x = startX; x <= endX; x++) {
-        final tl = cellAt(x, y);
-        final tr = cellAt(x + 1, y);
-        final br = cellAt(x + 1, y + 1);
-        final bl = cellAt(x, y + 1);
+    // Virtual grid range in sub-cell steps
+    final vStartX = startX * _subdiv;
+    final vStartY = startY * _subdiv;
+    final vEndX = endX * _subdiv + (_subdiv - 1);
+    final vEndY = endY * _subdiv + (_subdiv - 1);
 
-        // Skip if any cell is missing (no border data available)
-        if (tl == null || tr == null || br == null || bl == null) continue;
+    for (int vy = vStartY; vy <= vEndY; vy++) {
+      for (int vx = vStartX; vx <= vEndX; vx++) {
+        // World-local positions of this virtual quad's four corners
+        final px0 = vx * step;
+        final py0 = vy * step;
+        final px1 = (vx + 1) * step;
+        final py1 = (vy + 1) * step;
 
-        final result = _processSquareFromCells(
-          tl: tl,
-          tr: tr,
-          br: br,
-          bl: bl,
-          x: x,
-          y: y,
-          chunkX: chunkX,
-          chunkY: chunkY,
-          stratigraphy: stratigraphy,
-        );
+        // SDF at each corner (bilinearly interpolated)
+        final sdfTL = sdfAt(px0, py0);
+        final sdfTR = sdfAt(px1, py0);
+        final sdfBR = sdfAt(px1, py1);
+        final sdfBL = sdfAt(px0, py1);
 
-        if (result != null) {
-          polygons.add(result.polygon);
-          if (result.edgeSegment.isNotEmpty) {
-            collisionSegments.add(result.edgeSegment);
+        // 4-bit marching squares index
+        int index = 0;
+        if (sdfTL < 0) index |= 8;
+        if (sdfTR < 0) index |= 4;
+        if (sdfBR < 0) index |= 2;
+        if (sdfBL < 0) index |= 1;
+
+        if (index == 0) continue; // All empty
+
+        // Edge midpoints (SDF-interpolated for precise zero-isosurface)
+        final topMid = _interpolateEdge(px0, py0, px1, py0, sdfTL, sdfTR);
+        final rightMid = _interpolateEdge(px1, py0, px1, py1, sdfTR, sdfBR);
+        final bottomMid = _interpolateEdge(px0, py1, px1, py1, sdfBL, sdfBR);
+        final leftMid = _interpolateEdge(px0, py0, px0, py1, sdfTL, sdfBL);
+
+        // Corner positions
+        final tlPos = Offset(px0, py0);
+        final trPos = Offset(px1, py0);
+        final brPos = Offset(px1, py1);
+        final blPos = Offset(px0, py1);
+
+        // Build polygon vertices and collision edges
+        List<Offset> polyVerts;
+        List<Offset> edgeVerts;
+        bool isInterior = false;
+
+        switch (index) {
+          case 1:
+            polyVerts = [leftMid, blPos, bottomMid];
+            edgeVerts = [leftMid, bottomMid];
+            break;
+          case 2:
+            polyVerts = [bottomMid, brPos, rightMid];
+            edgeVerts = [bottomMid, rightMid];
+            break;
+          case 3:
+            polyVerts = [leftMid, blPos, brPos, rightMid];
+            edgeVerts = [leftMid, rightMid];
+            break;
+          case 4:
+            polyVerts = [topMid, trPos, rightMid];
+            edgeVerts = [topMid, rightMid];
+            break;
+          case 5:
+            polyVerts = [topMid, trPos, rightMid, bottomMid, blPos, leftMid];
+            edgeVerts = [topMid, rightMid, bottomMid, leftMid];
+            break;
+          case 6:
+            polyVerts = [topMid, trPos, brPos, bottomMid];
+            edgeVerts = [topMid, bottomMid];
+            break;
+          case 7:
+            polyVerts = [topMid, trPos, brPos, blPos, leftMid];
+            edgeVerts = [topMid, leftMid];
+            break;
+          case 8:
+            polyVerts = [tlPos, topMid, leftMid];
+            edgeVerts = [topMid, leftMid];
+            break;
+          case 9:
+            polyVerts = [tlPos, topMid, bottomMid, blPos];
+            edgeVerts = [topMid, bottomMid];
+            break;
+          case 10:
+            polyVerts = [tlPos, topMid, rightMid, brPos, bottomMid, leftMid];
+            edgeVerts = [topMid, rightMid, bottomMid, leftMid];
+            break;
+          case 11:
+            polyVerts = [tlPos, topMid, rightMid, brPos, blPos];
+            edgeVerts = [topMid, rightMid];
+            break;
+          case 12:
+            polyVerts = [tlPos, trPos, rightMid, leftMid];
+            edgeVerts = [rightMid, leftMid];
+            break;
+          case 13:
+            polyVerts = [tlPos, trPos, rightMid, bottomMid, blPos];
+            edgeVerts = [rightMid, bottomMid];
+            break;
+          case 14:
+            polyVerts = [tlPos, trPos, brPos, bottomMid, leftMid];
+            edgeVerts = [bottomMid, leftMid];
+            break;
+          case 15:
+            polyVerts = [tlPos, trPos, brPos, blPos];
+            edgeVerts = [];
+            isInterior = true;
+            break;
+          default:
+            continue;
+        }
+
+        // Color: use the center of this virtual quad to look up the real cell
+        final centerX = (px0 + px1) / 2;
+        final centerY = (py0 + py1) / 2;
+        final worldTileX = chunkX * GameConstants.chunkSize + centerX;
+        final worldTileY = chunkY * GameConstants.chunkSize + centerY;
+        final depthFeet = worldTileY * GameConstants.feetPerTile;
+
+        // Gather solid corners for color determination
+        final solidSdfs = <double>[];
+        final solidTypes = <CellType>[];
+        OreType? foundOreType;
+        bool cellIsOre = false;
+        bool cellIsLava = false;
+
+        for (final corner in [
+          (px0, py0, sdfTL),
+          (px1, py0, sdfTR),
+          (px1, py1, sdfBR),
+          (px0, py1, sdfBL),
+        ]) {
+          if (corner.$3 < 0) {
+            solidSdfs.add(corner.$3);
+            final cell = nearestCell(corner.$1, corner.$2);
+            if (cell != null) {
+              solidTypes.add(cell.type);
+              if (cell.type == CellType.ore) {
+                cellIsOre = true;
+                foundOreType ??= cell.oreType;
+              } else if (cell.type == CellType.lava) {
+                cellIsLava = true;
+              }
+            }
           }
+        }
+
+        Color fillColor;
+        if (cellIsOre && foundOreType != null) {
+          fillColor = foundOreType.color;
+        } else if (cellIsLava) {
+          fillColor = const Color(0xFFFF4500);
+        } else {
+          // Detect air above for grass rendering
+          final aboveSdf = sdfAt(centerX, centerY - step);
+          final hasAirAbove = aboveSdf >= 0 && (sdfBL < 0 || sdfBR < 0);
+
+          fillColor = ColorUtils.getStratumTerrainColor(
+            worldTileX,
+            depthFeet,
+            stratigraphy,
+            hasAirAbove: hasAirAbove,
+          );
+
+          // Brightness variation from average SDF depth
+          if (solidSdfs.isNotEmpty) {
+            final avgSdf = solidSdfs.fold<double>(0, (s, v) => s + v) /
+                solidSdfs.length;
+            // Deeper into solid = slightly darker, near surface = lighter
+            final t = ((-avgSdf) / 2.0).clamp(0.0, 1.0);
+            fillColor = Color.lerp(
+              ColorUtils.brighten(fillColor, 0.04),
+              ColorUtils.darken(fillColor, 0.06),
+              t,
+            )!;
+          }
+        }
+
+        final strokeColor = ColorUtils.darken(fillColor, 0.15);
+
+        // Build path
+        final path = Path();
+        path.moveTo(polyVerts[0].dx, polyVerts[0].dy);
+        for (int i = 1; i < polyVerts.length; i++) {
+          path.lineTo(polyVerts[i].dx, polyVerts[i].dy);
+        }
+        path.close();
+
+        polygons.add(MarchingSquaresPoly(
+          path: path,
+          fillColor: fillColor,
+          strokeColor: strokeColor,
+          isInterior: isInterior,
+          isOre: cellIsOre,
+          isLava: cellIsLava,
+        ));
+
+        if (edgeVerts.isNotEmpty) {
+          collisionSegments.add(edgeVerts);
         }
       }
     }
@@ -144,180 +344,7 @@ class MarchingSquares {
     );
   }
 
-  /// Process a single 2x2 square from pre-fetched cells
-  static _SquareResult? _processSquareFromCells({
-    required TerrainCell tl,
-    required TerrainCell tr,
-    required TerrainCell br,
-    required TerrainCell bl,
-    required int x,
-    required int y,
-    required int chunkX,
-    required int chunkY,
-    Stratigraphy? stratigraphy,
-  }) {
-    // Compute 4-bit index
-    int index = 0;
-    if (tl.isSolid) index |= 8; // bit 3
-    if (tr.isSolid) index |= 4; // bit 2
-    if (br.isSolid) index |= 2; // bit 1
-    if (bl.isSolid) index |= 1; // bit 0
-
-    // Case 0 (all empty) - nothing to draw
-    if (index == 0) return null;
-
-    // Calculate world tile position
-    final worldTileX = chunkX * GameConstants.chunkSize + x;
-    final worldTileY = chunkY * GameConstants.chunkSize + y;
-    final px = x.toDouble();
-    final py = y.toDouble();
-
-    // Edge midpoints (interpolated by SDF values)
-    final topMid =
-        _interpolateEdge(px, py, px + 1, py, tl.sdf, tr.sdf);
-    final rightMid = _interpolateEdge(
-        px + 1, py, px + 1, py + 1, tr.sdf, br.sdf);
-    final bottomMid = _interpolateEdge(
-        px, py + 1, px + 1, py + 1, bl.sdf, br.sdf);
-    final leftMid =
-        _interpolateEdge(px, py, px, py + 1, tl.sdf, bl.sdf);
-
-    // Corner positions
-    final tlPos = Offset(px, py);
-    final trPos = Offset(px + 1, py);
-    final brPos = Offset(px + 1, py + 1);
-    final blPos = Offset(px, py + 1);
-
-    // Build polygon vertices and edge segments based on case index
-    List<Offset> polyVerts;
-    List<Offset> edgeVerts;
-    bool isInterior = false;
-
-    switch (index) {
-      case 1: // Only bottom-left solid
-        polyVerts = [leftMid, blPos, bottomMid];
-        edgeVerts = [leftMid, bottomMid];
-        break;
-      case 2: // Only bottom-right solid
-        polyVerts = [bottomMid, brPos, rightMid];
-        edgeVerts = [bottomMid, rightMid];
-        break;
-      case 3: // Bottom row solid
-        polyVerts = [leftMid, blPos, brPos, rightMid];
-        edgeVerts = [leftMid, rightMid];
-        break;
-      case 4: // Only top-right solid
-        polyVerts = [topMid, trPos, rightMid];
-        edgeVerts = [topMid, rightMid];
-        break;
-      case 5: // Top-right and bottom-left (saddle point)
-        polyVerts = [topMid, trPos, rightMid, bottomMid, blPos, leftMid];
-        edgeVerts = [topMid, rightMid, bottomMid, leftMid];
-        break;
-      case 6: // Right column solid
-        polyVerts = [topMid, trPos, brPos, bottomMid];
-        edgeVerts = [topMid, bottomMid];
-        break;
-      case 7: // All except top-left
-        polyVerts = [topMid, trPos, brPos, blPos, leftMid];
-        edgeVerts = [topMid, leftMid];
-        break;
-      case 8: // Only top-left solid
-        polyVerts = [tlPos, topMid, leftMid];
-        edgeVerts = [topMid, leftMid];
-        break;
-      case 9: // Left column solid
-        polyVerts = [tlPos, topMid, bottomMid, blPos];
-        edgeVerts = [topMid, bottomMid];
-        break;
-      case 10: // Top-left and bottom-right (saddle point)
-        polyVerts = [tlPos, topMid, rightMid, brPos, bottomMid, leftMid];
-        edgeVerts = [topMid, rightMid, bottomMid, leftMid];
-        break;
-      case 11: // All except top-right
-        polyVerts = [tlPos, topMid, rightMid, brPos, blPos];
-        edgeVerts = [topMid, rightMid];
-        break;
-      case 12: // Top row solid
-        polyVerts = [tlPos, trPos, rightMid, leftMid];
-        edgeVerts = [rightMid, leftMid];
-        break;
-      case 13: // All except bottom-right
-        polyVerts = [tlPos, trPos, rightMid, bottomMid, blPos];
-        edgeVerts = [rightMid, bottomMid];
-        break;
-      case 14: // All except bottom-left
-        polyVerts = [tlPos, trPos, brPos, bottomMid, leftMid];
-        edgeVerts = [bottomMid, leftMid];
-        break;
-      case 15: // All solid - full square, no visible edge
-        polyVerts = [tlPos, trPos, brPos, blPos];
-        edgeVerts = [];
-        isInterior = true;
-        break;
-      default:
-        return null;
-    }
-
-    // Get depth-based color
-    final depthFeet = worldTileY * GameConstants.feetPerTile;
-
-    // Use the predominant solid cell's color, or depth-based terrain color
-    final solidCells = [tl, tr, br, bl].where((c) => c.isSolid).toList();
-    Color fillColor;
-    if (solidCells.any((c) => c.type == CellType.ore)) {
-      final oreCell = solidCells.firstWhere(
-        (c) => c.type == CellType.ore,
-        orElse: () => solidCells.first,
-      );
-      fillColor = oreCell.baseColor;
-    } else if (solidCells.any((c) => c.type == CellType.lava)) {
-      fillColor = const Color(0xFFFF4500);
-    } else {
-      // Use stratigraphy-aware coloring when available, otherwise
-      // fall back to simple depth-based colors.
-      fillColor = ColorUtils.getStratumTerrainColor(
-        worldTileX.toDouble(),
-        depthFeet,
-        stratigraphy,
-      );
-
-      // Add subtle brightness variation based on SDF depth into solid
-      final avgDensity =
-          solidCells.fold<double>(0.0, (sum, c) => sum + c.density) /
-              solidCells.length.clamp(1, 4);
-      fillColor = Color.lerp(
-        ColorUtils.darken(fillColor, 0.15),
-        ColorUtils.brighten(fillColor, 0.08),
-        avgDensity,
-      )!;
-    }
-
-    final strokeColor = ColorUtils.darken(fillColor, 0.25);
-
-    // Build visual path
-    final path = Path();
-    if (polyVerts.isNotEmpty) {
-      path.moveTo(polyVerts[0].dx, polyVerts[0].dy);
-      for (int i = 1; i < polyVerts.length; i++) {
-        path.lineTo(polyVerts[i].dx, polyVerts[i].dy);
-      }
-      path.close();
-    }
-
-    return _SquareResult(
-      polygon: MarchingSquaresPoly(
-        path: path,
-        fillColor: fillColor,
-        strokeColor: strokeColor,
-        isInterior: isInterior,
-      ),
-      edgeSegment: edgeVerts,
-    );
-  }
-
   /// Interpolate edge crossing position based on SDF values.
-  /// The surface crossing is at SDF = 0 (the zero-isosurface).
   static Offset _interpolateEdge(
     double x1,
     double y1,
@@ -326,14 +353,12 @@ class MarchingSquares {
     double sdf1,
     double sdf2,
   ) {
-    const threshold = 0.0; // SDF zero-crossing
-
     double t;
     final diff = sdf2 - sdf1;
     if (diff.abs() < 0.001) {
       t = 0.5;
     } else {
-      t = ((threshold - sdf1) / diff).clamp(0.0, 1.0);
+      t = (-sdf1 / diff).clamp(0.0, 1.0);
     }
 
     return Offset(
@@ -341,14 +366,4 @@ class MarchingSquares {
       y1 + (y2 - y1) * t,
     );
   }
-}
-
-class _SquareResult {
-  final MarchingSquaresPoly polygon;
-  final List<Offset> edgeSegment;
-
-  const _SquareResult({
-    required this.polygon,
-    required this.edgeSegment,
-  });
 }

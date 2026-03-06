@@ -11,6 +11,7 @@ class OreType {
   final double hardness; // Drill resistance multiplier
   final double spawnRarity; // 0.0 (common) to 1.0 (very rare)
   final bool isSpecialCollectible; // Immediate cash, no cargo space
+  final String? spritePath; // Path to 4x4 sprite sheet in assets/images/
 
   const OreType({
     required this.name,
@@ -22,6 +23,7 @@ class OreType {
     required this.hardness,
     required this.spawnRarity,
     this.isSpecialCollectible = false,
+    this.spritePath,
   });
 }
 
@@ -40,6 +42,7 @@ class OreRegistry {
     glowColor: Color(0x408B4513),
     hardness: 1.0,
     spawnRarity: 0.05,
+    spritePath: 'items/ores/iron_ore.png',
   );
 
   static const OreType bronzium = OreType(
@@ -62,6 +65,7 @@ class OreRegistry {
     glowColor: Color(0x40C0C0C0),
     hardness: 1.2,
     spawnRarity: 0.12,
+    spritePath: 'items/ores/silver_ore.png',
   );
 
   static const OreType goldium = OreType(
@@ -73,6 +77,7 @@ class OreRegistry {
     glowColor: Color(0x60FFD700),
     hardness: 1.3,
     spawnRarity: 0.18,
+    spritePath: 'items/ores/gold_ore.png',
   );
 
   static const OreType platinium = OreType(
@@ -84,6 +89,7 @@ class OreRegistry {
     glowColor: Color(0x40E8E8FF),
     hardness: 1.5,
     spawnRarity: 0.25,
+    spritePath: 'items/ores/platinum_ore.png',
   );
 
   static const OreType einsteinium = OreType(
@@ -95,6 +101,7 @@ class OreRegistry {
     glowColor: Color(0x607FFFD4),
     hardness: 2.0,
     spawnRarity: 0.35,
+    spritePath: 'items/ores/einsteinium_ore.png',
   );
 
   static const OreType emerald = OreType(
@@ -106,6 +113,7 @@ class OreRegistry {
     glowColor: Color(0x6050C878),
     hardness: 2.5,
     spawnRarity: 0.45,
+    spritePath: 'items/gems/emerald.png',
   );
 
   static const OreType ruby = OreType(
@@ -117,6 +125,7 @@ class OreRegistry {
     glowColor: Color(0x60FF0000),
     hardness: 3.0,
     spawnRarity: 0.55,
+    spritePath: 'items/gems/ruby.png',
   );
 
   static const OreType diamond = OreType(
@@ -139,6 +148,7 @@ class OreRegistry {
     glowColor: Color(0x8000CED1),
     hardness: 5.0,
     spawnRarity: 0.75,
+    spritePath: 'items/gems/amazonite.png',
   );
 
   // ─── New Ores ───
@@ -152,6 +162,7 @@ class OreRegistry {
     glowColor: Color(0x80FF4500),
     hardness: 6.0,
     spawnRarity: 0.85,
+    spritePath: 'items/rare/hellstone.png',
   );
 
   static const OreType soulCrystal = OreType(
@@ -163,6 +174,7 @@ class OreRegistry {
     glowColor: Color(0xA08A2BE2),
     hardness: 8.0,
     spawnRarity: 0.95,
+    spritePath: 'items/gems/soul_crystal.png',
   );
 
   // ─── Special Collectibles ───
@@ -177,6 +189,7 @@ class OreRegistry {
     hardness: 1.0,
     spawnRarity: 0.80,
     isSpecialCollectible: true,
+    spritePath: 'items/rare/dinosaur_bone.png',
   );
 
   static const OreType treasureChest = OreType(
@@ -225,6 +238,7 @@ class OreRegistry {
     hardness: 1.0,
     spawnRarity: 0.99,
     isSpecialCollectible: true,
+    spritePath: 'items/rare/ancient_scroll.png',
   );
 
   /// All standard (mineable, takes cargo space) ores sorted by depth

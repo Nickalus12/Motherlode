@@ -5,6 +5,7 @@ import 'package:flame/components.dart' hide Vector2;
 import 'package:flame_forge2d/flame_forge2d.dart'
     hide ParticleSystem, ParticleType;
 
+import 'package:motherlode/rendering/item_sprite_manager.dart';
 import 'package:motherlode/rendering/particle_pool.dart';
 import 'package:motherlode/utils/constants.dart';
 import 'package:motherlode/utils/math_utils.dart';
@@ -50,11 +51,42 @@ class Particle {
   }
 }
 
+/// A short-lived animated sprite that pops up from a mined ore location.
+class _PickupEffect {
+  double x, y;
+  final double startY;
+  final String? spritePath;
+  final Color color;
+  double elapsed = 0;
+  static const double duration = 0.6;
+  static const double riseDistance = 1.5;
+  static const double spriteFps = 10.0;
+
+  _PickupEffect({
+    required this.x,
+    required this.y,
+    this.spritePath,
+    required this.color,
+  }) : startY = y;
+
+  bool get isDead => elapsed >= duration;
+
+  double get progress => (elapsed / duration).clamp(0.0, 1.0);
+
+  void update(double dt) {
+    elapsed += dt;
+    // Ease-out rise
+    final t = progress;
+    y = startY - riseDistance * (1 - (1 - t) * (1 - t));
+  }
+}
+
 /// Particle system using a pre-allocated object pool for zero-allocation
 /// particle emission during gameplay.
 class ParticleSystem extends Component {
   final ParticlePool _pool = ParticlePool();
   final Random _random = Random();
+  final List<_PickupEffect> _pickupEffects = [];
 
   // Ambient dust particles (persistent, not pooled)
   final List<Particle> _dustParticles = [];
@@ -69,6 +101,14 @@ class ParticleSystem extends Component {
 
     // Update pooled particles
     _pool.update(dt);
+
+    // Update pickup effects
+    for (int i = _pickupEffects.length - 1; i >= 0; i--) {
+      _pickupEffects[i].update(dt);
+      if (_pickupEffects[i].isDead) {
+        _pickupEffects.removeAt(i);
+      }
+    }
 
     // Update dust
     for (final dust in _dustParticles) {
@@ -110,6 +150,50 @@ class ParticleSystem extends Component {
     for (final d in _dustParticles) {
       paint.color = const Color(0xFFFFFFFF).withValues(alpha: d.lifeRatio * 0.08);
       canvas.drawCircle(Offset(d.x, d.y), d.size, paint);
+    }
+
+    // Render pickup effects
+    final spriteManager = ItemSpriteManager.instance;
+    for (final effect in _pickupEffects) {
+      final alpha = 1.0 - effect.progress;
+      final scale = 0.6 + 0.4 * (1.0 - effect.progress);
+
+      if (effect.spritePath != null) {
+        final image = spriteManager.getImage(effect.spritePath!);
+        if (image != null) {
+          final frameIndex = spriteManager.getAnimatedFrame(
+            effect.elapsed,
+            _PickupEffect.spriteFps,
+          );
+          final srcRect = spriteManager.getFrame(
+            effect.spritePath!,
+            frameIndex,
+          );
+          final halfSize = scale * 0.5;
+          final dstRect = Rect.fromLTWH(
+            effect.x - halfSize,
+            effect.y - halfSize,
+            scale,
+            scale,
+          );
+          paint.color = Color.from(
+            alpha: alpha,
+            red: 1.0,
+            green: 1.0,
+            blue: 1.0,
+          );
+          canvas.drawImageRect(image, srcRect, dstRect, paint);
+          continue;
+        }
+      }
+
+      // Fallback: colored circle
+      paint.color = effect.color.withValues(alpha: alpha);
+      canvas.drawCircle(
+        Offset(effect.x, effect.y),
+        scale * 0.3,
+        paint,
+      );
     }
   }
 
@@ -185,6 +269,16 @@ class ParticleSystem extends Component {
         type: ParticleType.ore,
       );
     }
+  }
+
+  /// Ore pickup effect: animated sprite rising from mined location
+  void emitOrePickup(Vector2 position, Color oreColor, String? spritePath) {
+    _pickupEffects.add(_PickupEffect(
+      x: position.x,
+      y: position.y,
+      color: oreColor,
+      spritePath: spritePath,
+    ));
   }
 
   /// 3. ENGINE EXHAUST: While thrusting upward
@@ -331,5 +425,6 @@ class ParticleSystem extends Component {
   }
 
   /// Number of active particles (pooled + dust)
-  int get activeCount => _pool.activeCount + _dustParticles.length;
+  int get activeCount =>
+      _pool.activeCount + _dustParticles.length + _pickupEffects.length;
 }

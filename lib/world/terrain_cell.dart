@@ -102,15 +102,15 @@ class TerrainCell {
   Color get baseColor {
     switch (type) {
       case CellType.sand:
-        return const Color(0xFFD4A96A);
+        return const Color(0xFF9E7B4A); // Warm sandy brown
       case CellType.dirt:
-        return const Color(0xFF8B6914);
+        return const Color(0xFF8B6B3D); // Rich brown earth
       case CellType.rock:
-        return const Color(0xFF5A5A5A);
+        return const Color(0xFF787878); // Medium gray stone
       case CellType.obsidian:
-        return const Color(0xFF1A1A2E);
+        return const Color(0xFF2D1B3D); // Deep purple-black
       case CellType.lava:
-        return const Color(0xFFFF4500);
+        return const Color(0xFFFF4500); // Bright orange-red
       case CellType.gas:
         return const Color(0xFF00FF4420);
       case CellType.ore:

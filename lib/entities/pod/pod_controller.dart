@@ -16,7 +16,6 @@ class PodController extends Component
   final Pod pod;
 
   // Touch zones (relative to viewport)
-  static const double _touchZoneMargin = 0.15;
 
   // Active touch tracking
   final Map<int, Vector2> _activeTouches = {};
@@ -74,34 +73,53 @@ class PodController extends Component
       final relX = touch.x / viewportSize.x;
       final relY = touch.y / viewportSize.y;
 
-      // Determine direction based on touch position relative to center
       final dx = touch.x - centerX;
       final dy = touch.y - centerY;
 
-      // Determine primary direction
-      if (dx.abs() > dy.abs()) {
-        // Horizontal movement
-        if (dx < -viewportSize.x * _touchZoneMargin) {
-          pod.thrustLeft = true;
-        } else if (dx > viewportSize.x * _touchZoneMargin) {
-          pod.thrustRight = true;
-        }
-      } else {
-        // Vertical movement
-        if (dy < -viewportSize.y * _touchZoneMargin) {
-          pod.thrustUp = true;
-        } else if (dy > viewportSize.y * _touchZoneMargin) {
-          pod.drillDown = true;
-        }
+      // Use angular zones instead of axis-dominant for more responsive controls.
+      // Dead zone in the center (10% of screen size)
+      final deadZone = viewportSize.x * 0.08;
+      final dist = (dx * dx + dy * dy);
+      if (dist < deadZone * deadZone) continue;
+
+      // Use angle-based zones with overlap for simultaneous inputs
+      // Top zone: thrust up (upper 120 degrees)
+      if (dy < -viewportSize.y * 0.08) {
+        pod.thrustUp = true;
       }
 
-      // Allow simultaneous horizontal + vertical in corners
-      if (relX < 0.3 && relY < 0.3) {
+      // Bottom zone: drill down (lower 120 degrees)
+      if (dy > viewportSize.y * 0.08) {
+        pod.drillDown = true;
+      }
+
+      // Left zone: thrust left (with generous overlap)
+      if (dx < -viewportSize.x * 0.1) {
+        pod.thrustLeft = true;
+      }
+
+      // Right zone: thrust right
+      if (dx > viewportSize.x * 0.1) {
+        pod.thrustRight = true;
+      }
+
+      // Corner combos (override for clarity)
+      if (relX < 0.25 && relY < 0.25) {
         pod.thrustUp = true;
         pod.thrustLeft = true;
-      } else if (relX > 0.7 && relY < 0.3) {
+        pod.drillDown = false;
+      } else if (relX > 0.75 && relY < 0.25) {
         pod.thrustUp = true;
         pod.thrustRight = true;
+        pod.drillDown = false;
+      } else if (relX < 0.25 && relY > 0.75) {
+        pod.drillDown = true;
+        pod.thrustLeft = true;
+        pod.thrustUp = false;
+      } else if (relX > 0.75 && relY > 0.75) {
+        pod.drillDown = true;
+        pod.thrustRight = true;
+        pod.thrustUp = false;
       }
     }
   }

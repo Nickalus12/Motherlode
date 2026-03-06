@@ -5,6 +5,7 @@ class ConsumableItem {
   final int cost;
   final String hotkey;
   final String icon;
+  final String? spritePath; // Path to 4x4 sprite sheet in assets/images/
 
   const ConsumableItem({
     required this.name,
@@ -12,6 +13,7 @@ class ConsumableItem {
     required this.cost,
     required this.hotkey,
     required this.icon,
+    this.spritePath,
   });
 }
 
@@ -25,6 +27,7 @@ class SpecialItems {
     cost: 2000,
     hotkey: 'F',
     icon: '⛽',
+    spritePath: 'items/consumables/fuel_tank.png',
   );
 
   static const ConsumableItem hullRepairNanobots = ConsumableItem(
@@ -33,6 +36,7 @@ class SpecialItems {
     cost: 7500,
     hotkey: 'R',
     icon: '🔧',
+    spritePath: 'items/consumables/nanobots.png',
   );
 
   static const ConsumableItem dynamite = ConsumableItem(
@@ -41,6 +45,7 @@ class SpecialItems {
     cost: 2000,
     hotkey: 'X',
     icon: '💣',
+    spritePath: 'items/consumables/dynamite.png',
   );
 
   static const ConsumableItem plasticExplosive = ConsumableItem(
@@ -49,6 +54,7 @@ class SpecialItems {
     cost: 5000,
     hotkey: 'C',
     icon: '💥',
+    spritePath: 'items/consumables/plastic_explosive.png',
   );
 
   static const ConsumableItem quantumTeleporter = ConsumableItem(
@@ -57,6 +63,7 @@ class SpecialItems {
     cost: 2000,
     hotkey: 'Q',
     icon: '⚡',
+    spritePath: 'items/consumables/teleporter.png',
   );
 
   static const ConsumableItem matterTransmitter = ConsumableItem(
@@ -65,6 +72,7 @@ class SpecialItems {
     cost: 10000,
     hotkey: 'M',
     icon: '🌟',
+    spritePath: 'items/consumables/transmitter.png',
   );
 
   static const List<ConsumableItem> allConsumables = [

@@ -17,7 +17,9 @@ import 'package:motherlode/systems/depth_system.dart';
 import 'package:motherlode/systems/fuel_system.dart';
 import 'package:motherlode/systems/hull_system.dart';
 import 'package:motherlode/systems/earthquake_system.dart';
+import 'package:motherlode/rendering/item_sprite_manager.dart';
 import 'package:motherlode/utils/perf_monitor.dart';
+import 'package:motherlode/world/ore_registry.dart';
 import 'package:motherlode/world/chunk_manager.dart';
 import 'package:motherlode/world/genesis_pipeline.dart';
 import 'package:motherlode/world/stratigraphy.dart';
@@ -122,6 +124,12 @@ class MotherlodeGame extends Forge2DGame
     perfMonitor = PerfMonitor();
     terrainRenderer = TerrainRenderer();
     parallaxBackground = ParallaxBackground();
+
+    // Preload ore sprite sheets for terrain rendering
+    final oreSpritePaths = OreRegistry.allOres
+        .map((ore) => ore.spritePath)
+        .whereType<String>();
+    await ItemSpriteManager.instance.preloadAll(oreSpritePaths);
 
     // Add components to world
     world.add(parallaxBackground);

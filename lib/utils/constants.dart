@@ -77,17 +77,31 @@ class GameConstants {
   static const double creatureChaseRange = 200.0;
   static const double gasSporeChainRadius = 3.0;
 
-  // Biome colors
-  static const Color surfaceTerrainColor = Color(0xFF8B6914);
-  static const Color surfaceAccentColor = Color(0xFFA0784A);
-  static const Color shallowTerrainColor = Color(0xFF5A3A1A);
-  static const Color shallowAccentColor = Color(0xFF3D2810);
-  static const Color deepTerrainColor = Color(0xFF2A1A0A);
-  static const Color deepAccentColor = Color(0xFF1A0D05);
-  static const Color volcanicTerrainColor = Color(0xFF3A0A0A);
-  static const Color volcanicAccentColor = Color(0xFFFF3300);
-  static const Color hellTerrainColor = Color(0xFF1A0000);
-  static const Color hellAccentColor = Color(0xFFFF0000);
+  // Biome colors — Terraria/Motherload inspired palette
+  // Surface: lush green grass
+  static const Color grassColor = Color(0xFF4CAF50); // Vivid grass green
+  static const Color grassDarkColor = Color(0xFF2E7D32); // Darker grass shade
+  static const Color grassAccentColor = Color(0xFF66BB6A); // Light grass highlight
+
+  // Topsoil: warm brown earth (0-200ft)
+  static const Color surfaceTerrainColor = Color(0xFF8B6B3D); // Rich brown earth
+  static const Color surfaceAccentColor = Color(0xFFA0845A); // Light brown
+  // Shallow/Topsoil (200-1000ft): darker brown, clay tones
+  static const Color shallowTerrainColor = Color(0xFF6B4E2A); // Dark earth brown
+  static const Color shallowAccentColor = Color(0xFF5A3D1F); // Deep clay
+  // Rock layer (1000-3000ft): gray stone tones
+  static const Color deepTerrainColor = Color(0xFF696969); // Medium gray stone
+  static const Color deepAccentColor = Color(0xFF505050); // Darker gray
+  // Volcanic (3000-5000ft): dark red/orange volcanic rock
+  static const Color volcanicTerrainColor = Color(0xFF5C2020); // Dark volcanic red
+  static const Color volcanicAccentColor = Color(0xFFCC4400); // Glowing orange accent
+  // Hell (5000ft+): near-black with red undertone
+  static const Color hellTerrainColor = Color(0xFF2A0A0A); // Near-black hell rock
+  static const Color hellAccentColor = Color(0xFFCC0000); // Deep red accent
+
+  // Grass rendering
+  static const double grassDepthThreshold = 30.0; // feet — grass only on surface
+  static const double grassThickness = 0.3; // tile fraction for grass cap
 
   // Ambient light levels by depth
   static const double surfaceAmbientLight = 1.0;

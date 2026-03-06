@@ -395,7 +395,7 @@ class Stratigraphy {
       hardness: 0.5,
       porosity: 0.8,
       cellType: CellType.sand,
-      primaryColor: Color(0xFFD4A96A),
+      primaryColor: Color(0xFF8B6B3D), // Rich brown earth
       nativeOres: [OreRegistry.ironium, OreRegistry.bronzium],
       foldAmplitude: 20,
       foldFrequency: 0.006,
@@ -412,7 +412,7 @@ class Stratigraphy {
       hardness: 0.8,
       porosity: 0.6,
       cellType: CellType.sand,
-      primaryColor: Color(0xFFC4943A),
+      primaryColor: Color(0xFF9E7B4A), // Sandy brown
       nativeOres: [
         OreRegistry.ironium,
         OreRegistry.bronzium,
@@ -433,7 +433,7 @@ class Stratigraphy {
       hardness: 1.2,
       porosity: 0.5,
       cellType: CellType.dirt,
-      primaryColor: Color(0xFF9E8E6E),
+      primaryColor: Color(0xFF8A7D5A), // Tan limestone
       nativeOres: [OreRegistry.silverium, OreRegistry.goldium],
       foldAmplitude: 60,
       foldFrequency: 0.005,
@@ -450,7 +450,7 @@ class Stratigraphy {
       hardness: 1.0,
       porosity: 0.3,
       cellType: CellType.dirt,
-      primaryColor: Color(0xFF5A4A3A),
+      primaryColor: Color(0xFF5C4A38), // Dark shale brown
       nativeOres: [OreRegistry.goldium, OreRegistry.platinium],
       foldAmplitude: 50,
       foldFrequency: 0.004,
@@ -467,7 +467,7 @@ class Stratigraphy {
       hardness: 2.5,
       porosity: 0.15,
       cellType: CellType.rock,
-      primaryColor: Color(0xFF6B6B6B),
+      primaryColor: Color(0xFF787878), // Medium gray granite
       nativeOres: [
         OreRegistry.platinium,
         OreRegistry.einsteinium,
@@ -487,7 +487,7 @@ class Stratigraphy {
       hardness: 3.0,
       porosity: 0.1,
       cellType: CellType.rock,
-      primaryColor: Color(0xFF3A3A3A),
+      primaryColor: Color(0xFF484848), // Dark gray basalt
       nativeOres: [
         OreRegistry.emerald,
         OreRegistry.ruby,
@@ -507,7 +507,7 @@ class Stratigraphy {
       hardness: 4.5,
       porosity: 0.05,
       cellType: CellType.obsidian,
-      primaryColor: Color(0xFF1A1A2E),
+      primaryColor: Color(0xFF2D1B3D), // Deep purple-black obsidian
       nativeOres: [
         OreRegistry.ruby,
         OreRegistry.diamond,
@@ -527,7 +527,7 @@ class Stratigraphy {
       hardness: 6.0,
       porosity: 0.02,
       cellType: CellType.obsidian,
-      primaryColor: Color(0xFF2A0A0A),
+      primaryColor: Color(0xFF3A1515), // Dark crimson mantle
       nativeOres: [OreRegistry.amazonite, OreRegistry.hellstone],
       foldAmplitude: 150,
       foldFrequency: 0.002,
@@ -543,7 +543,7 @@ class Stratigraphy {
       hardness: 8.0,
       porosity: 0.01,
       cellType: CellType.obsidian,
-      primaryColor: Color(0xFF1A0000),
+      primaryColor: Color(0xFF1A0505), // Near-black hellstone
       nativeOres: [OreRegistry.hellstone, OreRegistry.soulCrystal],
       foldAmplitude: 80,
       foldFrequency: 0.002,

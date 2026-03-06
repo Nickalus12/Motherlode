@@ -3,11 +3,45 @@ import 'dart:ui';
 import 'package:motherlode/utils/constants.dart';
 import 'package:motherlode/world/stratigraphy.dart';
 
-/// Color utility functions for depth-graded rendering
+/// Color utility functions for depth-graded rendering.
+///
+/// Provides smooth biome transitions, grass-cap surface coloring, and subtle
+/// per-cell variation so the terrain looks organic rather than flat/uniform.
 class ColorUtils {
   ColorUtils._();
 
-  /// Get terrain color for a given depth in feet
+  // -----------------------------------------------------------------------
+  // Grass surface detection
+  // -----------------------------------------------------------------------
+
+  /// Whether a given depth qualifies as "grass surface."
+  /// Grass renders on the very top of solid terrain near depth 0.
+  static bool isGrassSurface(double depthFeet) {
+    return depthFeet <= GameConstants.grassDepthThreshold && depthFeet >= -15.0;
+  }
+
+  /// Return the grass color with subtle per-position variation so it looks
+  /// natural rather than a solid block of green.
+  static Color getGrassColor(double worldX, double worldY) {
+    // Cheap positional hash for variation
+    final hash = ((worldX * 13.7 + worldY * 27.3).abs() % 1000) / 1000.0;
+    // Mix between dark and light grass
+    final t = hash * 0.4; // 0-40% variation
+    return Color.lerp(
+      GameConstants.grassColor,
+      hash > 0.5
+          ? GameConstants.grassDarkColor
+          : GameConstants.grassAccentColor,
+      t,
+    )!;
+  }
+
+  // -----------------------------------------------------------------------
+  // Depth-based terrain color (fallback when no stratigraphy)
+  // -----------------------------------------------------------------------
+
+  /// Get terrain color for a given depth in feet.
+  /// Smooth lerp across all biome layers.
   static Color getTerrainColor(double depthFeet) {
     if (depthFeet <= 0) return GameConstants.surfaceTerrainColor;
 
@@ -50,37 +84,49 @@ class ColorUtils {
     )!;
   }
 
-  /// Get terrain color using geological stratigraphy.
+  // -----------------------------------------------------------------------
+  // Stratigraphy-aware coloring (primary path for Genesis terrain)
+  // -----------------------------------------------------------------------
+
+  /// Get terrain color using geological stratigraphy with grass surface,
+  /// smooth boundary blending, and subtle per-cell texture variation.
   ///
-  /// Returns the stratum's color with subtle noise-based variation for
-  /// natural-looking geological layers. Falls back to depth-based color
-  /// if [stratigraphy] is null.
-  ///
-  /// Near stratum boundaries, blends between adjacent layer colors for
-  /// smooth visual transitions instead of hard lines.
+  /// Falls back to depth-based color when [stratigraphy] is null.
   static Color getStratumTerrainColor(
     double worldX,
     double depthFeet,
-    Stratigraphy? stratigraphy,
-  ) {
-    if (stratigraphy == null) return getTerrainColor(depthFeet);
+    Stratigraphy? stratigraphy, {
+    bool hasAirAbove = false,
+  }) {
+    // Grass surface: top of terrain near the surface
+    if (hasAirAbove && isGrassSurface(depthFeet)) {
+      return getGrassColor(worldX, depthFeet);
+    }
+
+    if (stratigraphy == null) {
+      return _addTextureVariation(
+        getTerrainColor(depthFeet),
+        worldX,
+        depthFeet,
+      );
+    }
 
     final stratum = stratigraphy.getStratumAtPosition(worldX, depthFeet);
     final base = stratum.primaryColor;
 
-    // Check proximity to stratum boundary for blending.
-    // Find the boundary depth at this worldX for the current stratum.
+    // Blend near stratum boundaries for smooth transitions
     final boundary = stratigraphy.getStratumBoundary(stratum, worldX);
     final distFromBoundary = depthFeet - boundary;
-    const blendZone = 30.0; // feet of transition between layers
+    const blendZone = 60.0; // feet of smooth transition
 
     Color layerColor;
-    if (distFromBoundary < blendZone) {
-      // Near top boundary — blend with the stratum above
+    if (distFromBoundary < blendZone && distFromBoundary >= 0) {
       final stratumIdx = Stratigraphy.strata.indexOf(stratum);
       if (stratumIdx > 0) {
         final above = Stratigraphy.strata[stratumIdx - 1];
-        final t = (distFromBoundary / blendZone).clamp(0.0, 1.0);
+        // Smooth ease-in-out curve for natural blending
+        final raw = (distFromBoundary / blendZone).clamp(0.0, 1.0);
+        final t = raw * raw * (3.0 - 2.0 * raw); // smoothstep
         layerColor = Color.lerp(above.primaryColor, base, t)!;
       } else {
         layerColor = base;
@@ -89,16 +135,56 @@ class ColorUtils {
       layerColor = base;
     }
 
-    // Add subtle per-cell variation using a cheap hash (no noise call
-    // needed here since this runs per-polygon during rendering).
-    // worldX and depthFeet combined give positional variation.
-    final hash = (worldX.toInt() * 17 + depthFeet.toInt() * 31) % 200;
-    final variation = (hash / 200.0 - 0.5) * 0.12; // +/- 6% brightness
-    final r = (layerColor.r + variation).clamp(0.0, 1.0);
-    final g = (layerColor.g + variation).clamp(0.0, 1.0);
-    final b = (layerColor.b + variation).clamp(0.0, 1.0);
-    return Color.from(alpha: layerColor.a, red: r, green: g, blue: b);
+    return _addTextureVariation(layerColor, worldX, depthFeet);
   }
+
+  /// Add multi-scale per-cell brightness and hue variation for organic texture.
+  ///
+  /// Four overlapping hash patterns at different scales create natural-looking
+  /// variation without visible repetition or grid artifacts. Includes warm/cool
+  /// color shifting and saturation variation for realistic geological appearance.
+  static Color _addTextureVariation(
+    Color color,
+    double worldX,
+    double depthFeet,
+  ) {
+    // Use fractional positions for smoother variation (not just integer grid)
+    final fx = worldX * 1.0;
+    final fy = depthFeet * 0.067; // scale feet to ~tile units
+
+    // Large-scale variation (geological patches, ~8-10 tile wavelength)
+    final hash1 = (((fx * 17.3 + fy * 31.7).abs()) % 200) / 200.0;
+    // Medium-scale variation (rock grain, ~3-4 tile wavelength)
+    final hash2 = (((fx * 53.1 + fy * 97.3).abs()) % 150) / 150.0;
+    // Fine-scale speckle (individual cell variation)
+    final hash3 = (((fx * 127.7 + fy * 211.3).abs()) % 100) / 100.0;
+    // Extra-fine noise for micro detail
+    final hash4 = (((fx * 251.1 + fy * 173.9).abs()) % 80) / 80.0;
+
+    // Multi-scale brightness: larger amplitude at bigger scales
+    final brightness =
+        (hash1 - 0.5) * 0.16 +
+        (hash2 - 0.5) * 0.10 +
+        (hash3 - 0.5) * 0.06 +
+        (hash4 - 0.5) * 0.03;
+
+    // Warm/cool hue shift — reddish vs bluish within the same base tone
+    final warmShift = (hash2 - 0.5) * 0.05 + (hash4 - 0.5) * 0.02;
+
+    // Saturation variation — some patches slightly more vivid or muted
+    final satVar = (hash1 - 0.5) * 0.06;
+
+    // Apply brightness + warmth + saturation
+    final avgBright = (color.r + color.g + color.b) / 3.0;
+    final r = (color.r + brightness + warmShift + (color.r - avgBright) * satVar).clamp(0.0, 1.0);
+    final g = (color.g + brightness - warmShift * 0.3 + (color.g - avgBright) * satVar).clamp(0.0, 1.0);
+    final b = (color.b + brightness - warmShift + (color.b - avgBright) * satVar).clamp(0.0, 1.0);
+    return Color.from(alpha: color.a, red: r, green: g, blue: b);
+  }
+
+  // -----------------------------------------------------------------------
+  // Accent / ambient / fog colors
+  // -----------------------------------------------------------------------
 
   /// Get accent color for a given depth in feet
   static Color getAccentColor(double depthFeet) {
@@ -181,6 +267,10 @@ class ColorUtils {
         (depthFeet / GameConstants.maxDepth).clamp(0.0, 1.0);
     return terrainColor.withValues(alpha: normalizedDepth * 0.3);
   }
+
+  // -----------------------------------------------------------------------
+  // Color manipulation helpers
+  // -----------------------------------------------------------------------
 
   /// Brighten a color by a factor (for ore sparkle, highlights)
   static Color brighten(Color color, double factor) {

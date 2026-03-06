@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flame_forge2d/flame_forge2d.dart' show Vector2;
 import 'package:flutter/material.dart';
 
+import 'package:motherlode/data/special_items.dart';
 import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/ui/shop_overlay.dart';
 
@@ -763,28 +764,7 @@ class _HudOverlayState extends State<HudOverlay>
             ),
           ],
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.storefront, color: Colors.amber, size: 16),
-            const SizedBox(width: 6),
-            Text(
-              'SHOP',
-              style: TextStyle(
-                color: Colors.amber,
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 2,
-                shadows: [
-                  Shadow(
-                    color: Colors.amber.withValues(alpha: 0.5),
-                    blurRadius: 4,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+        child: Icon(Icons.storefront, color: Colors.amber, size: 20),
       ),
     );
   }
@@ -794,23 +774,23 @@ class _HudOverlayState extends State<HudOverlay>
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         _buildConsumableSlot('X', Icons.flash_on, widget.game.dynamiteCount,
-            Colors.orange),
+            Colors.orange, SpecialItems.dynamite.spritePath),
         _buildConsumableSlot('C', Icons.local_fire_department,
-            widget.game.plasticExplosiveCount, Colors.red),
+            widget.game.plasticExplosiveCount, Colors.red, SpecialItems.plasticExplosive.spritePath),
         _buildConsumableSlot('F', Icons.local_gas_station,
-            widget.game.reserveFuelCount, Colors.green),
+            widget.game.reserveFuelCount, Colors.green, SpecialItems.reserveFuelTank.spritePath),
         _buildConsumableSlot(
-            'R', Icons.build, widget.game.nanobotCount, Colors.cyan),
+            'R', Icons.build, widget.game.nanobotCount, Colors.cyan, SpecialItems.hullRepairNanobots.spritePath),
         _buildConsumableSlot('Q', Icons.bolt, widget.game.teleporterCount,
-            Colors.purple),
+            Colors.purple, SpecialItems.quantumTeleporter.spritePath),
         _buildConsumableSlot('M', Icons.star, widget.game.transmitterCount,
-            Colors.amber),
+            Colors.amber, SpecialItems.matterTransmitter.spritePath),
       ],
     );
   }
 
   Widget _buildConsumableSlot(
-      String hotkey, IconData icon, int count, Color accentColor) {
+      String hotkey, IconData icon, int count, Color accentColor, String? spritePath) {
     final hasItem = count > 0;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 3),
@@ -849,27 +829,24 @@ class _HudOverlayState extends State<HudOverlay>
                     ]
                   : null,
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  icon,
-                  size: 18,
-                  color: hasItem
-                      ? accentColor
-                      : Colors.white.withValues(alpha: 0.15),
-                ),
-                Text(
-                  hotkey,
-                  style: TextStyle(
-                    color: hasItem
-                        ? Colors.white.withValues(alpha: 0.5)
-                        : Colors.white.withValues(alpha: 0.1),
-                    fontSize: 8,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
+            child: Center(
+              child: hasItem && spritePath != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.asset(
+                        'assets/images/$spritePath',
+                        width: 28,
+                        height: 28,
+                        fit: BoxFit.contain,
+                      ),
+                    )
+                  : Icon(
+                      icon,
+                      size: 20,
+                      color: hasItem
+                          ? accentColor
+                          : Colors.white.withValues(alpha: 0.15),
+                    ),
             ),
           ),
           if (count > 0)

@@ -94,18 +94,8 @@ class _UpgradeTreePanelState extends State<UpgradeTreePanel> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(cat.icon, style: const TextStyle(fontSize: 16)),
-                        const SizedBox(height: 2),
-                        Text(
-                          cat.name,
-                          style: TextStyle(
-                            color: isSelected ? catColor : Colors.white38,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
+                        Text(cat.icon, style: const TextStyle(fontSize: 20)),
+                        const SizedBox(height: 4),
                         SizedBox(
                           width: 30,
                           height: 2,
@@ -383,14 +373,10 @@ class _UpgradeTreePanelState extends State<UpgradeTreePanel> {
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: catColor.withValues(alpha: 0.2)),
         ),
-        child: Text(
-          'OWNED',
-          style: TextStyle(
-            color: catColor,
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1,
-          ),
+        child: Icon(
+          Icons.check,
+          color: catColor,
+          size: 16,
         ),
       );
     }
@@ -405,14 +391,10 @@ class _UpgradeTreePanelState extends State<UpgradeTreePanel> {
               color:
                   Colors.purple.withValues(alpha: isLocked ? 0.1 : 0.3)),
         ),
-        child: Text(
-          'SCROLL',
-          style: TextStyle(
-            color: Colors.purple.withValues(alpha: isLocked ? 0.25 : 0.7),
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1,
-          ),
+        child: Icon(
+          Icons.auto_stories,
+          color: Colors.purple.withValues(alpha: isLocked ? 0.25 : 0.7),
+          size: 16,
         ),
       );
     }

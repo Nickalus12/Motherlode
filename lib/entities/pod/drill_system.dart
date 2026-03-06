@@ -118,19 +118,17 @@ class DrillSystem extends Component {
 
     if (ore.isSpecialCollectible) {
       game.addCash(ore.value.toDouble());
-      game.particleSystem.emitOreSparkle(
-        Vector2(gridX.toDouble(), gridY.toDouble()),
-        ore.color,
-      );
+      final pos = Vector2(gridX.toDouble(), gridY.toDouble());
+      game.particleSystem.emitOreSparkle(pos, ore.color);
+      game.particleSystem.emitOrePickup(pos, ore.color, ore.spritePath);
       return true;
     }
 
     if (pod.cargoSystem.canAdd(ore.weight.toDouble())) {
       pod.cargoSystem.addOre(ore);
-      game.particleSystem.emitOreSparkle(
-        Vector2(gridX.toDouble(), gridY.toDouble()),
-        ore.color,
-      );
+      final pos = Vector2(gridX.toDouble(), gridY.toDouble());
+      game.particleSystem.emitOreSparkle(pos, ore.color);
+      game.particleSystem.emitOrePickup(pos, ore.color, ore.spritePath);
       pod.updateMass();
       return true;
     }

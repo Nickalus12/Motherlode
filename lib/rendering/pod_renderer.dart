@@ -165,9 +165,9 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
   void _drawHull(ui.Canvas canvas) {
     // Choose hull image based on state
     ui.Image? img;
-    if (pod.thrustLeft && _moveLeftImage != null) {
+    if (pod.thrustLeft && !pod.thrustRight && _moveLeftImage != null) {
       img = _moveLeftImage;
-    } else if (pod.thrustRight && _moveRightImage != null) {
+    } else if (pod.thrustRight && !pod.thrustLeft && _moveRightImage != null) {
       img = _moveRightImage;
     } else if (_idleFrames.isNotEmpty) {
       img = _idleFrames[_idleFrame];
@@ -176,7 +176,8 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
     }
 
     if (img != null) {
-      _drawImage(canvas, img, const ui.Offset(0, -0.15), 1.8, 1.8);
+      // Hull centered on physics body; body is setAsBoxXY(0.9, 1.1) = 1.8×2.2
+      _drawImage(canvas, img, const ui.Offset(0, 0), 1.8, 2.0);
     } else {
       _drawBodyFallback(canvas);
     }
@@ -254,9 +255,9 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
     final flashAlpha = (_damageFlash * 0.6).clamp(0.0, 1.0);
     canvas.drawRect(
       ui.Rect.fromCenter(
-        center: const ui.Offset(0, -0.15),
+        center: const ui.Offset(0, 0),
         width: 1.8,
-        height: 1.8,
+        height: 2.0,
       ),
       ui.Paint()
         ..color = ui.Color.from(
@@ -289,12 +290,14 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
 
   void _drawExhaust(ui.Canvas canvas) {
     final flamePhase = _time * 20;
+    // Exhaust comes from the side panels of the mech, near the top of the body
     for (int side = -1; side <= 1; side += 2) {
-      final baseX = side * 0.55;
+      final baseX = side * 0.45; // tight against side panels of the mech body
+      final baseY = -0.2; // shoulder area where engines would be
       for (int i = 0; i < 4; i++) {
-        final flicker = sin(flamePhase + i * 1.5) * 0.1;
-        final flameLength = 0.25 + i * 0.06 + flicker;
-        final flameWidth = 0.05 - i * 0.008;
+        final flicker = sin(flamePhase + i * 1.5 + side) * 0.08;
+        final flameLength = 0.2 + i * 0.05 + flicker;
+        final flameWidth = 0.06 - i * 0.01;
         final t = i / 4.0;
         final flameColor = ui.Color.lerp(
           const ui.Color(0xFFFFFFCC),
@@ -304,7 +307,7 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
 
         canvas.drawRect(
           ui.Rect.fromCenter(
-            center: ui.Offset(baseX, 0.7 + flameLength / 2),
+            center: ui.Offset(baseX, baseY + flameLength / 2),
             width: flameWidth,
             height: flameLength,
           ),

@@ -29,7 +29,19 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/pod/
+    - assets/images/pod/hull_0/
     - assets/images/drills/
+    - assets/images/drills/drill_0/
+    - assets/images/drills/drill_1/
+    - assets/images/drills/drill_2/
+    - assets/images/drills/drill_3/
+    - assets/images/drills/drill_4/
+    - assets/images/drills/drill_5/
+    - assets/images/drills/drill_6/
     - assets/images/buildings/
     - assets/images/backgrounds/
+    - assets/images/items/ores/
+    - assets/images/items/gems/
+    - assets/images/items/rare/
+    - assets/images/items/consumables/
     - shaders/reaction_diffusion.frag

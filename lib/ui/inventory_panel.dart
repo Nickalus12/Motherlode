@@ -202,15 +202,10 @@ class _InventoryPanelState extends State<InventoryPanel> {
                       ),
                     ],
                   ),
-                  child: Text(
-                    'SELL ALL  \$${_formatCash(cargo.totalValue)}',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 2,
-                      color: Colors.white,
-                    ),
+                  child: const Icon(
+                    Icons.sell,
+                    color: Colors.white,
+                    size: 28,
                   ),
                 ),
               ),
@@ -259,25 +254,61 @@ class _InventoryPanelState extends State<InventoryPanel> {
       ),
       child: Row(
         children: [
-          // Ore color swatch with glow
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: item.ore.color,
+          // Ore sprite thumbnail (or color swatch fallback)
+          if (item.ore.spritePath != null)
+            ClipRRect(
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: item.ore.color.withValues(alpha: 0.5),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: item.ore.glowColor.withValues(alpha: 0.4),
-                  blurRadius: 6,
-                  spreadRadius: 0,
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: item.ore.color.withValues(alpha: 0.5),
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                  boxShadow: [
+                    BoxShadow(
+                      color: item.ore.glowColor.withValues(alpha: 0.4),
+                      blurRadius: 6,
+                    ),
+                  ],
                 ),
-              ],
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: FittedBox(
+                    fit: BoxFit.cover,
+                    alignment: Alignment.topLeft,
+                    clipBehavior: Clip.hardEdge,
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      widthFactor: 0.25,
+                      heightFactor: 0.25,
+                      child: Image.asset(
+                          'assets/images/${item.ore.spritePath}'),
+                    ),
+                  ),
+                ),
+              ),
+            )
+          else
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: item.ore.color,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: item.ore.color.withValues(alpha: 0.5),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: item.ore.glowColor.withValues(alpha: 0.4),
+                    blurRadius: 6,
+                    spreadRadius: 0,
+                  ),
+                ],
+              ),
             ),
-          ),
           const SizedBox(width: 12),
 
           // Name and count

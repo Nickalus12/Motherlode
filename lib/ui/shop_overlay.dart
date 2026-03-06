@@ -164,10 +164,10 @@ class _ShopOverlayState extends State<ShopOverlay>
           fontWeight: FontWeight.normal,
         ),
         tabs: const [
-          Tab(text: 'FUEL', icon: Icon(Icons.local_gas_station, size: 20)),
-          Tab(text: 'SELL', icon: Icon(Icons.attach_money, size: 20)),
-          Tab(text: 'UPGRADE', icon: Icon(Icons.arrow_upward, size: 20)),
-          Tab(text: 'ITEMS', icon: Icon(Icons.inventory_2, size: 20)),
+          Tab(icon: Icon(Icons.local_gas_station, size: 24)),
+          Tab(icon: Icon(Icons.attach_money, size: 24)),
+          Tab(icon: Icon(Icons.arrow_upward, size: 24)),
+          Tab(icon: Icon(Icons.inventory_2, size: 24)),
         ],
       ),
     );
@@ -441,7 +441,7 @@ class _ShopOverlayState extends State<ShopOverlay>
       ),
       child: Row(
         children: [
-          // Icon
+          // Icon or sprite
           Container(
             width: 42,
             height: 42,
@@ -457,7 +457,17 @@ class _ShopOverlayState extends State<ShopOverlay>
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: accentColor.withValues(alpha: 0.2)),
             ),
-            child: Icon(icon, color: accentColor, size: 22),
+            child: item.spritePath != null
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(9),
+                    child: Image.asset(
+                      'assets/images/${item.spritePath}',
+                      width: 30,
+                      height: 30,
+                      fit: BoxFit.contain,
+                    ),
+                  )
+                : Icon(icon, color: accentColor, size: 22),
           ),
           const SizedBox(width: 12),
 
@@ -491,23 +501,6 @@ class _ShopOverlayState extends State<ShopOverlay>
                         color: accentColor.withValues(alpha: 0.7),
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 5, vertical: 1),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      child: Text(
-                        '[${item.hotkey}]',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.4),
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                        ),
                       ),
                     ),
                   ],
@@ -559,13 +552,10 @@ class _ShopOverlayState extends State<ShopOverlay>
                 ]
               : null,
         ),
-        child: Text(
-          cost,
-          style: TextStyle(
-            color: canAfford ? Colors.white : Colors.white38,
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
+        child: Icon(
+          Icons.add_shopping_cart,
+          color: canAfford ? Colors.white : Colors.white38,
+          size: 18,
         ),
       ),
     );
@@ -598,15 +588,10 @@ class _ShopOverlayState extends State<ShopOverlay>
             ),
           ],
         ),
-        child: Text(
-          '$label  $cost',
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 2,
-          ),
+        child: Icon(
+          Icons.local_gas_station,
+          color: Colors.white,
+          size: 28,
         ),
       ),
     );
