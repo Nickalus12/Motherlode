@@ -9,15 +9,15 @@ import 'package:motherlode/motherlode_game.dart';
 
 /// Renders the mining robot using frame-based sprite animations.
 ///
-/// Animations (48×48 px frames):
-///   idle      — 4 frames, breathing/idle loop
-///   drill     — 16 frames, drilling downward
-///   fly       — 16 frames, thruster propulsion
-///   walk_east — 6 frames, ground movement right
-///   walk_west — 6 frames, ground movement left
-///   hover     — 16 frames, airborne without thrust
-///   death     — 7 frames, death sequence (plays once)
-///   pickup    — 5 frames, ore collection
+/// Animations:
+///   idle      — 4 frames  (48×48 px), breathing/idle loop
+///   drill     — 16 frames (64×64 px), drilling downward
+///   fly       — 16 frames (64×64 px), thruster propulsion
+///   walk_east — 6 frames  (48×48 px), ground movement right
+///   walk_west — 6 frames  (48×48 px), ground movement left
+///   hover     — 16 frames (64×64 px), airborne without thrust
+///   death     — 7 frames  (48×48 px), death sequence (plays once)
+///   pickup    — 5 frames  (48×48 px), ore collection
 class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
   final Pod pod;
   double _time = 0;
@@ -31,30 +31,51 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
   double _frameTimer = 0;
   bool _flipX = false; // Mirror for facing direction
 
+  // Previous animation for cross-fade transitions
+  String? _prevAnim;
+  int _prevFrame = 0;
+  double _transitionProgress = 1.0; // 1.0 = fully transitioned
+  static const double _transitionSpeed = 8.0; // Frames per second of blend
+
   // Death animation plays once then holds last frame
   bool _deathPlayed = false;
+
+  // Pickup animation state (plays as overlay then returns to previous)
+  bool _playingPickup = false;
+  double _pickupTimer = 0;
 
   // Damage flash
   double _damageFlash = 0;
   double _lastHull = -1;
 
-  // FPS per animation
-  static const Map<String, double> _fps = {
+  // Drill available indicator
+  double _drillAvailablePulse = 0;
+  bool _canDrill = false;
+
+  // Base FPS per animation (drill FPS is dynamic)
+  static const Map<String, double> _baseFps = {
     'idle': 4.0,
-    'drill': 12.0,
+    'drill': 8.0, // Base; scales up to 20 with drill progress
     'fly': 12.0,
     'walk_east': 10.0,
     'walk_west': 10.0,
     'hover': 8.0,
     'death': 8.0,
-    'pickup': 8.0,
+    'pickup': 12.0,
   };
+
+  // Ground shadow state
+  double _shadowOpacity = 0;
 
   // Pre-allocated Paint objects
   final _imgPaint = ui.Paint()..filterQuality = ui.FilterQuality.none;
   final _flashPaint = ui.Paint()..blendMode = ui.BlendMode.plus;
   final _sparkPaint = ui.Paint()..style = ui.PaintingStyle.fill;
   final _statusPaint = ui.Paint();
+  final _glowPaint = ui.Paint()
+    ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 0.3);
+  final _shadowPaint = ui.Paint()
+    ..maskFilter = const ui.MaskFilter.blur(ui.BlurStyle.normal, 0.15);
 
   PodRenderer({required this.pod});
 
@@ -92,14 +113,34 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
     super.update(dt);
     _time += dt;
 
-    // Determine target animation from pod state + input
+    // Check if ore was collected this frame -> trigger pickup animation
+    if (pod.drillSystem.oreCollectedThisFrame && !_playingPickup) {
+      _playingPickup = true;
+      _pickupTimer = 0;
+    }
+
+    // Update pickup animation timer
+    if (_playingPickup) {
+      _pickupTimer += dt;
+      final pickupFrames = _anims['pickup'];
+      final pickupFps = _baseFps['pickup'] ?? 12.0;
+      final pickupDuration = (pickupFrames?.length ?? 5) / pickupFps;
+      if (_pickupTimer >= pickupDuration) {
+        _playingPickup = false;
+      }
+    }
+
+    // Determine target animation from robot state + input
     final target = _resolveAnimation();
 
-    // If animation changed, reset frame counter (except death which plays once)
+    // If animation changed, start cross-fade transition
     if (target != _currentAnim) {
       if (_currentAnim == 'death' && _deathPlayed) {
         // Stay on death
       } else {
+        _prevAnim = _currentAnim;
+        _prevFrame = _frame;
+        _transitionProgress = 0;
         _currentAnim = target;
         _frame = 0;
         _frameTimer = 0;
@@ -107,8 +148,27 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
       }
     }
 
+    // Progress cross-fade
+    if (_transitionProgress < 1.0) {
+      _transitionProgress =
+          (_transitionProgress + dt * _transitionSpeed).clamp(0.0, 1.0);
+    }
+
+    // Dynamic FPS for drill and walk animations
+    double fps;
+    if (_currentAnim == 'drill') {
+      // Drill: 8 at 0% progress -> 20 at 100% progress
+      final progress = pod.drillSystem.drillProgress;
+      fps = 8.0 + progress * 12.0;
+    } else if (_currentAnim == 'walk_east' || _currentAnim == 'walk_west') {
+      // Walk: scale FPS with actual horizontal speed to prevent moonwalking
+      final horizSpeed = pod.body.linearVelocity.x.abs();
+      fps = (horizSpeed * 3.0).clamp(4.0, 14.0);
+    } else {
+      fps = _baseFps[_currentAnim] ?? 8.0;
+    }
+
     // Advance frame timer
-    final fps = _fps[_currentAnim] ?? 8.0;
     _frameTimer += dt;
     if (_frameTimer >= 1.0 / fps) {
       _frameTimer -= 1.0 / fps;
@@ -135,6 +195,34 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
     if (_damageFlash > 0) {
       _damageFlash = (_damageFlash - dt * 4).clamp(0.0, 1.0);
     }
+
+    // Update ground shadow opacity — fade in when grounded, fade out when airborne
+    final isGrounded = pod.podBody.isGrounded;
+    final targetShadowOpacity = isGrounded ? 0.35 : 0.0;
+    _shadowOpacity += (targetShadowOpacity - _shadowOpacity) * (dt * 8.0);
+    _shadowOpacity = _shadowOpacity.clamp(0.0, 0.35);
+
+    // Drill available indicator: check if grounded + drillable cell below
+    _updateDrillAvailable(dt);
+  }
+
+  void _updateDrillAvailable(double dt) {
+    if (pod.state != PodState.drilling &&
+        pod.podBody.isGrounded &&
+        pod.state != PodState.dead) {
+      final gridX = pod.position.x.round();
+      final gridY = (pod.position.y + 1.2).round();
+      final cell = game.chunkManager.getTerrainCell(gridX, gridY);
+      _canDrill = cell != null && cell.isDrillable;
+    } else {
+      _canDrill = false;
+    }
+
+    if (_canDrill) {
+      _drillAvailablePulse += dt * 3.0;
+    } else {
+      _drillAvailablePulse = 0;
+    }
   }
 
   String _resolveAnimation() {
@@ -143,8 +231,8 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
 
     // Any active thrust (keyboard or analog) → fly animation, regardless of state
     final isThrusting = pod.thrustUp || pod.thrustAnalogY < -0.1;
-    final isMovingHoriz = pod.thrustLeft || pod.thrustRight ||
-        pod.thrustAnalogX.abs() > 0.1;
+    final isMovingHoriz =
+        pod.thrustLeft || pod.thrustRight || pod.thrustAnalogX.abs() > 0.1;
 
     if (isThrusting) {
       if (pod.thrustLeft || pod.thrustAnalogX < -0.1) _flipX = true;
@@ -152,10 +240,14 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
       return 'fly';
     }
 
-    // Grounded + horizontal input → walk
-    if (pod.podBody.isGrounded || pod.state == PodState.grounded ||
-        pod.state == PodState.idle || pod.state == PodState.surfaced) {
-      if (isMovingHoriz) {
+    // Grounded + horizontal input + actually moving → walk
+    if (pod.podBody.isGrounded ||
+        pod.state == PodState.grounded ||
+        pod.state == PodState.idle ||
+        pod.state == PodState.surfaced) {
+      // Check actual velocity to avoid walk animation when stuck against walls
+      final actualHorizSpeed = pod.body.linearVelocity.x.abs();
+      if (isMovingHoriz && actualHorizSpeed > 0.5) {
         if (pod.thrustLeft || pod.thrustAnalogX < -0.1) {
           _flipX = false;
           return 'walk_west';
@@ -168,22 +260,49 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
       return 'idle';
     }
 
-    // Airborne without thrust
-    return 'idle';
+    // Airborne without thrust — use hover animation
+    return 'hover';
   }
 
   @override
   void render(ui.Canvas canvas) {
     canvas.save();
 
-    // Drilling vibration offset
+    // Drilling vibration offset (scales with progress)
     if (pod.state == PodState.drilling) {
-      final shake = sin(_time * 40) * 0.03;
+      final progress = pod.drillSystem.drillProgress;
+      final shakeAmp = 0.02 + progress * 0.04;
+      final shake = sin(_time * 40) * shakeAmp;
       canvas.translate(shake, 0);
     }
 
-    // Draw the robot sprite (fly animation has built-in thruster VFX)
-    _drawRobot(canvas);
+    // Ground contact shadow
+    if (_shadowOpacity > 0.01) {
+      _drawGroundShadow(canvas);
+    }
+
+    // Drill available glow (subtle pulsing outline when grounded over drillable terrain)
+    if (_canDrill && pod.state != PodState.drilling) {
+      _drawDrillAvailableGlow(canvas);
+    }
+
+    // Cross-fade: draw previous animation frame with fading opacity
+    if (_transitionProgress < 1.0 && _prevAnim != null) {
+      final prevFrames = _anims[_prevAnim!];
+      if (prevFrames != null && prevFrames.isNotEmpty) {
+        final prevImg = prevFrames[_prevFrame.clamp(0, prevFrames.length - 1)];
+        _drawSpriteWithOpacity(canvas, prevImg, 1.0 - _transitionProgress);
+      }
+    }
+
+    // Draw the robot sprite (current animation)
+    final opacity = _transitionProgress < 1.0 ? _transitionProgress : 1.0;
+    _drawRobotWithOpacity(canvas, opacity);
+
+    // Pickup animation overlay (plays on top of current anim)
+    if (_playingPickup) {
+      _drawPickupOverlay(canvas);
+    }
 
     // Damage white flash overlay
     if (_damageFlash > 0) {
@@ -203,7 +322,10 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
     canvas.restore();
   }
 
-  void _drawRobot(ui.Canvas canvas) {
+  static const double _drawSize = 2.4;
+  static const double _spriteOffsetY = 0.19;
+
+  void _drawRobotWithOpacity(ui.Canvas canvas, double opacity) {
     final frames = _anims[_currentAnim] ?? _anims['idle'];
     if (frames == null || frames.isEmpty) {
       _drawFallback(canvas);
@@ -211,41 +333,122 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
     }
 
     final img = frames[_frame.clamp(0, frames.length - 1)];
+    _drawSpriteWithOpacity(canvas, img, opacity);
+  }
 
-    // Physics body: center at (0,0), half-extents (0.9, 1.1).
-    // Bottom edge (ground contact) at y=+1.1.
-    // Sprite is 48×48 px. The robot's feet sit at ~88% down the frame.
-    // drawSize 2.4 gives good visual coverage of the 1.8×2.2 physics box.
-    // Feet alignment: offsetY - halfDraw + 0.88 * drawSize = 1.1
-    //   offsetY = 1.1 - 0.88 * 2.4 + 1.2 = 0.188
-    const drawSize = 2.4;
-    const spriteOffsetY = 0.19;
-
+  void _drawSpriteWithOpacity(ui.Canvas canvas, ui.Image img, double opacity) {
     final srcRect = ui.Rect.fromLTWH(
-      0, 0, img.width.toDouble(), img.height.toDouble(),
+      0,
+      0,
+      img.width.toDouble(),
+      img.height.toDouble(),
     );
 
     canvas.save();
 
-    // Apply horizontal flip if needed
     if (_flipX) {
       canvas.scale(-1, 1);
     }
 
     final dstRect = ui.Rect.fromCenter(
-      center: const ui.Offset(0, spriteOffsetY),
-      width: drawSize,
-      height: drawSize,
+      center: const ui.Offset(0, _spriteOffsetY),
+      width: _drawSize,
+      height: _drawSize,
     );
 
+    if (opacity < 1.0) {
+      _imgPaint.color = ui.Color.from(
+        alpha: opacity.clamp(0.0, 1.0),
+        red: 1.0,
+        green: 1.0,
+        blue: 1.0,
+      );
+    } else {
+      _imgPaint.color = const ui.Color(0xFFFFFFFF);
+    }
+
     canvas.drawImageRect(img, srcRect, dstRect, _imgPaint);
+    _imgPaint.color = const ui.Color(0xFFFFFFFF); // Reset
+    canvas.restore();
+  }
+
+  void _drawPickupOverlay(ui.Canvas canvas) {
+    final frames = _anims['pickup'];
+    if (frames == null || frames.isEmpty) return;
+
+    final pickupFps = _baseFps['pickup'] ?? 12.0;
+    final pickupFrame =
+        (_pickupTimer * pickupFps).floor().clamp(0, frames.length - 1);
+    final img = frames[pickupFrame];
+
+    // Pickup fades in then out
+    final totalDuration = frames.length / pickupFps;
+    final t = (_pickupTimer / totalDuration).clamp(0.0, 1.0);
+    final alpha = t < 0.3 ? t / 0.3 : (1.0 - t) / 0.7;
+
+    _drawSpriteWithOpacity(canvas, img, alpha.clamp(0.0, 0.7));
+  }
+
+  void _drawDrillAvailableGlow(ui.Canvas canvas) {
+    final pulse = (sin(_drillAvailablePulse) * 0.5 + 0.5); // 0..1
+    final alpha = 0.15 + pulse * 0.2;
+
+    _glowPaint.color = ui.Color.from(
+      alpha: alpha,
+      red: 0.3,
+      green: 0.8,
+      blue: 1.0,
+    );
+
+    // Soft glow around the robot's lower half (drill zone)
+    canvas.drawOval(
+      ui.Rect.fromCenter(
+        center: const ui.Offset(0, 0.8),
+        width: 1.8 + pulse * 0.3,
+        height: 1.2 + pulse * 0.2,
+      ),
+      _glowPaint,
+    );
+  }
+
+  void _drawGroundShadow(ui.Canvas canvas) {
+    // Get slope normal from SDF collision system for shadow deformation
+    double normalX = 0.0;
+    try {
+      normalX = game.sdfCollisionSystem.slopeNormal.x;
+    } catch (_) {
+      // System not yet available
+    }
+
+    _shadowPaint.color = ui.Color.from(
+      alpha: _shadowOpacity,
+      red: 0.0,
+      green: 0.0,
+      blue: 0.0,
+    );
+
+    // Skew shadow ellipse based on terrain slope
+    canvas.save();
+    // Shadow at the robot's feet (y=1.1 is physics bottom)
+    canvas.translate(normalX * 0.3, 1.1);
+    canvas.drawOval(
+      ui.Rect.fromCenter(
+        center: ui.Offset.zero,
+        width: 1.6 + normalX.abs() * 0.4,
+        height: 0.25,
+      ),
+      _shadowPaint,
+    );
     canvas.restore();
   }
 
   void _drawDamageFlash(ui.Canvas canvas) {
     final flashAlpha = (_damageFlash * 0.6).clamp(0.0, 1.0);
     _flashPaint.color = ui.Color.from(
-      alpha: flashAlpha, red: 1.0, green: 1.0, blue: 1.0,
+      alpha: flashAlpha,
+      red: 1.0,
+      green: 1.0,
+      blue: 1.0,
     );
     // Cover the sprite area (centered on the sprite draw rect)
     canvas.drawRect(
@@ -271,7 +474,9 @@ class PodRenderer extends Component with HasGameReference<MotherlodeGame> {
       final size = 0.02 + random.nextDouble() * 0.04;
       final t = random.nextDouble();
       _sparkPaint.color = ui.Color.lerp(
-        const ui.Color(0xFFFFFFCC), const ui.Color(0xFFFF6600), t,
+        const ui.Color(0xFFFFFFCC),
+        const ui.Color(0xFFFF6600),
+        t,
       )!;
       canvas.drawCircle(ui.Offset(sparkX, sparkY), size, _sparkPaint);
     }

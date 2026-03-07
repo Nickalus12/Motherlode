@@ -11,16 +11,22 @@ import 'package:motherlode/utils/constants.dart';
 ///
 /// Supports:
 /// - Touch: virtual joystick with proportional thrust (drag from touch origin)
-/// - Keyboard: Arrow keys or WASD (binary on/off)
+/// - Keyboard: Arrow keys or WASD (binary on/off, overrides analog)
 ///
 /// Touch creates a virtual joystick at the initial touch point. Dragging away
 /// from that origin controls thrust direction and magnitude proportionally.
+///
+/// Features:
+/// - Dead zone to prevent accidental micro-movements
+/// - Cubic sensitivity curve for precise low-speed + fast high-speed control
+/// - Smooth analog transitions (lerp) to prevent jerky thrust changes
+/// - Directional bias: near-vertical drags snap to pure downward for drilling
 class PodController extends Component
     with KeyboardHandler, HasGameReference<MotherlodeGame> {
   final Pod pod;
 
   /// Joystick dead zone radius in logical pixels.
-  static const double _deadZone = 20.0;
+  static const double _deadZone = 12.0;
 
   /// Maximum joystick radius — beyond this, thrust is 1.0.
   static const double _maxRadius = 120.0;
@@ -29,20 +35,71 @@ class PodController extends Component
   static const double _edgeMargin = 16.0;
 
   /// Threshold angle (radians from straight down) within which drill activates.
-  static const double _drillAngleThreshold = 0.6; // ~34 degrees
+  static const double _drillAngleThreshold = 1.0;
+
+  /// Directional snap threshold: angle within this many degrees of pure down
+  /// snaps horizontal input to zero for easier drilling (30 degrees = ~0.52 rad).
+  static const double _drillSnapAngle = 0.52;
+
+  /// Smooth lerp rate for analog input transitions (higher = faster response).
+  static const double _analogLerpRate = 15.0;
 
   // Active touch tracking (origin + current position per pointer)
   final Map<int, _TouchState> _activeTouches = {};
+
+  /// Whether keyboard is currently active (overrides analog touch input).
+  bool _keyboardActive = false;
+
+  // Smooth analog state — lerps toward target each frame
+  double _smoothAnalogX = 0.0;
+  double _smoothAnalogY = 0.0;
+  double _targetAnalogX = 0.0;
+  double _targetAnalogY = 0.0;
 
   /// Current joystick position for HUD visualization (null = no touch).
   Vector2? joystickOrigin;
   Vector2? joystickCurrent;
   double joystickMagnitude = 0.0;
 
+  /// Whether touch is active (for HUD ring visualization).
+  bool get isTouchActive => _activeTouches.isNotEmpty;
+
   PodController({required this.pod});
 
   @override
+  void update(double dt) {
+    super.update(dt);
+
+    // Skip analog smoothing when keyboard is active
+    if (_keyboardActive) return;
+
+    // Smooth lerp analog values toward target
+    final lerpFactor = (_analogLerpRate * dt).clamp(0.0, 1.0);
+    _smoothAnalogX += (_targetAnalogX - _smoothAnalogX) * lerpFactor;
+    _smoothAnalogY += (_targetAnalogY - _smoothAnalogY) * lerpFactor;
+
+    // Snap to zero when very close to prevent drift
+    if (_smoothAnalogX.abs() < 0.001) _smoothAnalogX = 0.0;
+    if (_smoothAnalogY.abs() < 0.001) _smoothAnalogY = 0.0;
+
+    // Apply smoothed values to pod
+    pod.thrustAnalogX = _smoothAnalogX;
+    pod.thrustAnalogY = _smoothAnalogY;
+  }
+
+  @override
   bool onKeyEvent(KeyEvent event, Set<LogicalKeyboardKey> keysPressed) {
+    final anyMovementKey = keysPressed.contains(LogicalKeyboardKey.arrowUp) ||
+        keysPressed.contains(LogicalKeyboardKey.keyW) ||
+        keysPressed.contains(LogicalKeyboardKey.arrowLeft) ||
+        keysPressed.contains(LogicalKeyboardKey.keyA) ||
+        keysPressed.contains(LogicalKeyboardKey.arrowRight) ||
+        keysPressed.contains(LogicalKeyboardKey.keyD) ||
+        keysPressed.contains(LogicalKeyboardKey.arrowDown) ||
+        keysPressed.contains(LogicalKeyboardKey.keyS);
+
+    _keyboardActive = anyMovementKey;
+
     // Movement keys
     pod.thrustUp = keysPressed.contains(LogicalKeyboardKey.arrowUp) ||
         keysPressed.contains(LogicalKeyboardKey.keyW);
@@ -53,9 +110,15 @@ class PodController extends Component
     pod.drillDown = keysPressed.contains(LogicalKeyboardKey.arrowDown) ||
         keysPressed.contains(LogicalKeyboardKey.keyS);
 
-    // Clear analog when using keyboard
-    pod.thrustAnalogX = 0.0;
-    pod.thrustAnalogY = 0.0;
+    // Clear analog when using keyboard (keyboard overrides touch)
+    if (_keyboardActive) {
+      pod.thrustAnalogX = 0.0;
+      pod.thrustAnalogY = 0.0;
+      _smoothAnalogX = 0.0;
+      _smoothAnalogY = 0.0;
+      _targetAnalogX = 0.0;
+      _targetAnalogY = 0.0;
+    }
 
     // Consumable hotkeys
     if (event is KeyDownEvent) {
@@ -81,6 +144,7 @@ class PodController extends Component
       origin: position.clone(),
       current: position.clone(),
     );
+    _keyboardActive = false;
     _updateTouchInput();
   }
 
@@ -96,11 +160,16 @@ class PodController extends Component
     _updateTouchInput();
   }
 
+  /// Apply cubic sensitivity curve: small inputs = precise, large inputs = fast.
+  double _applySensitivityCurve(double rawMag) {
+    return rawMag * rawMag * rawMag; // Cubic response
+  }
+
   void _updateTouchInput() {
     if (_activeTouches.isEmpty) {
-      // No touch — clear analog and binary
-      pod.thrustAnalogX = 0.0;
-      pod.thrustAnalogY = 0.0;
+      // No touch — smoothly decay analog to zero
+      _targetAnalogX = 0.0;
+      _targetAnalogY = 0.0;
       pod.thrustUp = false;
       pod.thrustLeft = false;
       pod.thrustRight = false;
@@ -123,8 +192,8 @@ class PodController extends Component
 
     if (dist < _deadZone) {
       // Within dead zone — no input
-      pod.thrustAnalogX = 0.0;
-      pod.thrustAnalogY = 0.0;
+      _targetAnalogX = 0.0;
+      _targetAnalogY = 0.0;
       pod.thrustUp = false;
       pod.thrustLeft = false;
       pod.thrustRight = false;
@@ -134,29 +203,48 @@ class PodController extends Component
     }
 
     // Normalize direction
-    final normX = dx / dist;
-    final normY = dy / dist;
+    double normX = dx / dist;
+    double normY = dy / dist;
 
-    // Proportional magnitude with quadratic response curve (fine control at low displacement)
+    // Directional bias: snap to pure downward when within snap angle
+    final downAngle = atan2(normY, normX.abs());
+    if (normY > 0 && downAngle > (pi / 2 - _drillSnapAngle)) {
+      // Near-vertical downward: zero out horizontal component
+      normX = 0.0;
+      normY = 1.0;
+    }
+
+    // Cubic sensitivity curve for magnitude
     final rawMag =
         ((dist - _deadZone) / (_maxRadius - _deadZone)).clamp(0.0, 1.0);
-    final magnitude = rawMag * rawMag;
+    final magnitude = _applySensitivityCurve(rawMag);
     joystickMagnitude = magnitude;
-
-    // Apply directional analog values
-    pod.thrustAnalogX = normX * magnitude;
-    pod.thrustAnalogY = normY * magnitude;
-
-    // Set binary flags for state machine compatibility
-    pod.thrustUp = normY < -0.3 && magnitude > 0.1;
-    pod.thrustLeft = normX < -0.3 && magnitude > 0.1;
-    pod.thrustRight = normX > 0.3 && magnitude > 0.1;
 
     // Drill activates when dragging downward within angle threshold
     final angle = atan2(dy, dx.abs());
-    pod.drillDown = angle > (pi / 2 - _drillAngleThreshold) &&
-        normY > 0.5 &&
-        magnitude > 0.15;
+    final wantsDrill = angle > (pi / 2 - _drillAngleThreshold) &&
+        normY > 0.3 &&
+        magnitude > 0.1;
+
+    if (wantsDrill) {
+      // Drilling is mutually exclusive with thrust — clear all thrust
+      pod.drillDown = true;
+      pod.thrustUp = false;
+      pod.thrustLeft = false;
+      pod.thrustRight = false;
+      _targetAnalogX = 0.0;
+      _targetAnalogY = 0.0;
+    } else {
+      pod.drillDown = false;
+      // Set smooth analog targets (actual values applied via lerp in update)
+      _targetAnalogX = normX * magnitude;
+      _targetAnalogY = normY * magnitude;
+
+      // Set binary flags for state machine compatibility
+      pod.thrustUp = normY < -0.3 && magnitude > 0.1;
+      pod.thrustLeft = normX < -0.3 && magnitude > 0.1;
+      pod.thrustRight = normX > 0.3 && magnitude > 0.1;
+    }
   }
 
   void _handleConsumableKey(LogicalKeyboardKey key) {
@@ -172,6 +260,10 @@ class PodController extends Component
       _useTeleporter();
     } else if (key == LogicalKeyboardKey.keyM) {
       _useTransmitter();
+    } else if (key == LogicalKeyboardKey.keyB) {
+      _useSupportBeam();
+    } else if (key == LogicalKeyboardKey.keyG) {
+      _useFlare();
     }
   }
 
@@ -190,6 +282,10 @@ class PodController extends Component
         _useTeleporter();
       case 5:
         _useTransmitter();
+      case 6:
+        _useSupportBeam();
+      case 7:
+        _useFlare();
     }
   }
 
@@ -245,6 +341,14 @@ class PodController extends Component
     // Safe teleport to surface center
     pod.body.setTransform(Vector2(0, -3), 0);
     pod.body.linearVelocity = Vector2.zero();
+  }
+
+  void _useSupportBeam() {
+    game.deployableSystem.placeBeam();
+  }
+
+  void _useFlare() {
+    game.deployableSystem.launchFlare();
   }
 }
 

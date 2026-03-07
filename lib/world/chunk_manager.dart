@@ -10,7 +10,7 @@ import 'package:motherlode/world/stratigraphy.dart';
 import 'package:motherlode/world/terrain_cell.dart';
 import 'package:motherlode/world/world_generator.dart';
 
-/// Manages chunk loading/unloading based on pod position
+/// Manages chunk loading/unloading based on robot position
 class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
   final WorldGenerator worldGenerator;
   final MotherlodeGame _game;
@@ -32,17 +32,31 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
   final Set<String> _modifiedChunks = {};
 
   // Throttle: max chunks to load per frame to avoid jank
-  static const int _maxChunkLoadsPerFrame = 2;
+  static const int _maxChunkLoadsPerFrame = 1;
 
   // Throttle: max dirty chunk rebuilds per frame to spread work
-  static const int _maxRebuildsPerFrame = 2;
+  static const int _maxRebuildsPerFrame = 1;
 
-  // Cached pod chunk position to skip recalculation when pod hasn't crossed a chunk boundary
+  // Rate-limit: minimum seconds between full chunk update checks
+  static const double _updateInterval = 0.1; // 10 Hz
+  double _updateTimer = 0;
+
+  // Cached robot chunk position to skip recalculation when robot hasn't crossed a chunk boundary
   int _lastPodChunkX = -999999;
   int _lastPodChunkY = -999999;
 
   // Pre-computed set of needed chunk keys (only recomputed on chunk boundary crossing)
   final Set<String> _neededChunks = {};
+
+  // --- Hot-path optimization: cached chunk lookups ---
+  // Avoids string key hashing on every getTerrainCell call (called 40-60x/frame).
+  // Caches the last 4 chunk references since SDF collision probes typically
+  // hit 1-2 chunks per frame (robot straddles at most 4 chunk boundaries).
+  static const int _chunkCacheSize = 4;
+  final List<int> _cachedChunkCX = List.filled(_chunkCacheSize, -999999);
+  final List<int> _cachedChunkCY = List.filled(_chunkCacheSize, -999999);
+  final List<Chunk?> _cachedChunkRef = List.filled(_chunkCacheSize, null);
+  int _cacheSlot = 0;
 
   ChunkManager({
     required this.worldGenerator,
@@ -61,60 +75,69 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
   void update(double dt) {
     super.update(dt);
     if (!_game.pod.isMounted) return;
-    _updateLoadedChunks();
+
+    // Rate-limit chunk loading/unloading checks to avoid per-frame overhead.
+    // Dirty chunk rebuilds still run every tick for responsiveness.
+    _updateTimer += dt;
+    final doFullUpdate = _updateTimer >= _updateInterval;
+    if (doFullUpdate) _updateTimer = 0;
+    _updateLoadedChunks(doFullUpdate: doFullUpdate);
   }
 
-  /// Update which chunks are loaded based on pod position
-  void _updateLoadedChunks() {
+  /// Update which chunks are loaded based on robot position.
+  /// [doFullUpdate] controls whether to check loading/unloading (rate-limited).
+  /// Dirty chunk rebuilds always run for responsiveness.
+  void _updateLoadedChunks({bool doFullUpdate = true}) {
     final podPos = _game.pod.position;
     final podChunkX = (podPos.x / GameConstants.chunkSize).floor();
     final podChunkY = (podPos.y / GameConstants.chunkSize).floor();
 
-    // Only recompute needed chunks when pod crosses a chunk boundary
-    final chunkChanged =
-        podChunkX != _lastPodChunkX || podChunkY != _lastPodChunkY;
-    if (chunkChanged) {
-      _lastPodChunkX = podChunkX;
-      _lastPodChunkY = podChunkY;
-      _neededChunks.clear();
-      for (int dy = -GameConstants.chunkLoadRadius;
-          dy <= GameConstants.chunkLoadRadius;
-          dy++) {
-        for (int dx = -GameConstants.chunkLoadRadius;
-            dx <= GameConstants.chunkLoadRadius;
-            dx++) {
-          _neededChunks.add(_chunkKey(podChunkX + dx, podChunkY + dy));
-        }
-      }
-    }
-
-    // Load new chunks (throttled to avoid frame jank)
-    int chunksLoaded = 0;
-    for (final key in _neededChunks) {
-      if (!_activeChunks.containsKey(key)) {
-        if (chunksLoaded >= _maxChunkLoadsPerFrame) break;
-        _loadChunk(key);
-        chunksLoaded++;
-      }
-    }
-
-    // Unload distant chunks (only check when pod moved to a new chunk)
-    if (chunkChanged) {
-      final chunksToRemove = <String>[];
-      for (final entry in _activeChunks.entries) {
-        if (!_neededChunks.contains(entry.key)) {
-          // Use chunk's stored coords instead of parsing the key string
-          final chunk = entry.value;
-          final dist = (chunk.chunkX - podChunkX).abs() +
-              (chunk.chunkY - podChunkY).abs();
-          if (dist > GameConstants.chunkUnloadRadius) {
-            chunksToRemove.add(entry.key);
+    if (doFullUpdate) {
+      // Only recompute needed chunks when robot crosses a chunk boundary
+      final chunkChanged =
+          podChunkX != _lastPodChunkX || podChunkY != _lastPodChunkY;
+      if (chunkChanged) {
+        _lastPodChunkX = podChunkX;
+        _lastPodChunkY = podChunkY;
+        _neededChunks.clear();
+        for (int dy = -GameConstants.chunkLoadRadius;
+            dy <= GameConstants.chunkLoadRadius;
+            dy++) {
+          for (int dx = -GameConstants.chunkLoadRadius;
+              dx <= GameConstants.chunkLoadRadius;
+              dx++) {
+            _neededChunks.add(_chunkKey(podChunkX + dx, podChunkY + dy));
           }
         }
       }
 
-      for (final key in chunksToRemove) {
-        _unloadChunk(key);
+      // Load new chunks (throttled to avoid frame jank)
+      int chunksLoaded = 0;
+      for (final key in _neededChunks) {
+        if (!_activeChunks.containsKey(key)) {
+          if (chunksLoaded >= _maxChunkLoadsPerFrame) break;
+          _loadChunk(key);
+          chunksLoaded++;
+        }
+      }
+
+      // Unload distant chunks (only check when robot moved to a new chunk)
+      if (chunkChanged) {
+        final chunksToRemove = <String>[];
+        for (final entry in _activeChunks.entries) {
+          if (!_neededChunks.contains(entry.key)) {
+            final chunk = entry.value;
+            final dist = (chunk.chunkX - podChunkX).abs() +
+                (chunk.chunkY - podChunkY).abs();
+            if (dist > GameConstants.chunkUnloadRadius) {
+              chunksToRemove.add(entry.key);
+            }
+          }
+        }
+
+        for (final key in chunksToRemove) {
+          _unloadChunk(key);
+        }
       }
     }
 
@@ -151,7 +174,9 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
     leftCol ??= _getBorderFromCache(chunk.chunkX - 1, chunk.chunkY, 'right');
     rightCol ??= _getBorderFromCache(chunk.chunkX + 1, chunk.chunkY, 'left');
 
-    // Synthesize empty borders when no neighbor data is available
+    // Synthesize borders when no neighbor data is available.
+    // Instead of assuming solid rock (which creates sharp cliff edges),
+    // extrapolate from the chunk's own edge cells for smooth continuity.
     const size = GameConstants.chunkSize;
 
     // Top: sky above surface chunk
@@ -162,21 +187,14 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
       );
     }
 
-    // Bottom: assume solid terrain continues below
-    bottomRow ??= List.generate(
-      size,
-      (_) => TerrainCell(type: CellType.rock, sdf: -1.0),
-    );
+    // Bottom: extrapolate from chunk's own bottom row
+    bottomRow ??= _extrapolateRow(chunk.cells, size - 1, 1);
 
-    // Left/Right: assume solid terrain continues laterally
-    leftCol ??= List.generate(
-      size,
-      (_) => TerrainCell(type: CellType.rock, sdf: -1.0),
-    );
-    rightCol ??= List.generate(
-      size,
-      (_) => TerrainCell(type: CellType.rock, sdf: -1.0),
-    );
+    // Left: extrapolate from chunk's own left column
+    leftCol ??= _extrapolateCol(chunk.cells, 0, -1);
+
+    // Right: extrapolate from chunk's own right column
+    rightCol ??= _extrapolateCol(chunk.cells, size - 1, 1);
 
     chunk.setBorderData(ChunkBorderData(
       topRow: topRow,
@@ -257,9 +275,22 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
   void _unloadChunk(String key) {
     final chunk = _activeChunks.remove(key);
     if (chunk != null) {
+      // Invalidate chunk reference cache
+      _invalidateChunkCache(chunk.chunkX, chunk.chunkY);
       // Cache the cell data for quick reload (LRU-managed)
       _putCache(key, chunk.cells);
       chunk.removeFromParent();
+    }
+  }
+
+  /// Invalidate a specific chunk from the hot-path reference cache.
+  void _invalidateChunkCache(int cx, int cy) {
+    for (int i = 0; i < _chunkCacheSize; i++) {
+      if (_cachedChunkCX[i] == cx && _cachedChunkCY[i] == cy) {
+        _cachedChunkCX[i] = -999999;
+        _cachedChunkCY[i] = -999999;
+        _cachedChunkRef[i] = null;
+      }
     }
   }
 
@@ -282,6 +313,10 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
           localY == GameConstants.chunkSize - 1) {
         _markNeighborsDirty(chunkX, chunkY);
       }
+      // Force immediate collision-only rebuild so the pod doesn't fall through.
+      // Visual mesh deferred to the throttled loop (chunk stays dirty).
+      _updateBorderData(chunk);
+      chunk.rebuildCollisionOnly();
     } else {
       // Modify cached data
       final cached = _chunkDataCache[key];
@@ -388,9 +423,18 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
       }
     }
 
-    // Mark all affected chunks dirty for visual/physics rebuild
+    // Force immediate collision-only rebuild on affected chunks.
+    // Uses fast base-resolution marching squares (no subdivision, no visual
+    // polygon generation) so collision stays correct without the cost of
+    // full mesh rebuild. Visual mesh is deferred to the throttled loop.
     for (final key in dirtyChunks) {
-      _activeChunks[key]?.markDirty();
+      final chunk = _activeChunks[key];
+      if (chunk != null) {
+        _updateBorderData(chunk);
+        chunk.rebuildCollisionOnly();
+        // Keep chunk marked dirty so visual mesh rebuilds in the throttled loop
+        chunk.markDirty();
+      }
     }
     _modifiedChunks.addAll(dirtyChunks);
 
@@ -434,15 +478,34 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
     return CellType.empty.index;
   }
 
-  /// Get the terrain cell at world grid coordinates
+  /// Get the terrain cell at world grid coordinates.
+  ///
+  /// Hot path: called 40-60 times per frame from SDF collision.
+  /// Uses a small LRU cache of chunk references to avoid string key
+  /// hashing and hashmap lookups on every call.
   TerrainCell? getTerrainCell(int gridX, int gridY) {
     final chunkX = _worldToChunk(gridX);
     final chunkY = _worldToChunk(gridY);
     final localX = _worldToLocal(gridX);
     final localY = _worldToLocal(gridY);
 
+    // Check chunk reference cache first (avoids string key + hashmap lookup)
+    for (int i = 0; i < _chunkCacheSize; i++) {
+      if (_cachedChunkCX[i] == chunkX && _cachedChunkCY[i] == chunkY) {
+        final chunk = _cachedChunkRef[i];
+        if (chunk != null) return chunk.getCell(localX, localY);
+        return null;
+      }
+    }
+
+    // Cache miss: do the hashmap lookup and cache the result
     final key = _chunkKey(chunkX, chunkY);
     final chunk = _activeChunks[key];
+    _cachedChunkCX[_cacheSlot] = chunkX;
+    _cachedChunkCY[_cacheSlot] = chunkY;
+    _cachedChunkRef[_cacheSlot] = chunk;
+    _cacheSlot = (_cacheSlot + 1) % _chunkCacheSize;
+
     if (chunk != null) {
       return chunk.getCell(localX, localY);
     }
@@ -470,7 +533,7 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
       _activeChunks.values.where((c) => c.isDirty).length;
 
   /// Force-load chunks around spawn point (0,0) and await their bodies.
-  /// Must complete before the pod is created so collision geometry exists.
+  /// Must complete before the robot is created so collision geometry exists.
   Future<void> forceLoadAroundSpawn() async {
     final futures = <Future<void>>[];
     for (int dy = -GameConstants.chunkLoadRadius;
@@ -580,6 +643,49 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
       if (toEvict == null) break; // All entries are modified, can't evict
       _chunkDataCache.remove(toEvict);
     }
+  }
+
+  /// Extrapolate a row beyond the chunk edge for smooth border synthesis.
+  /// Uses the edge row and the row one step inward to predict the next row,
+  /// preventing abrupt SDF discontinuities at chunk boundaries.
+  static List<TerrainCell> _extrapolateRow(
+    List<List<TerrainCell>> cells,
+    int edgeY,
+    int direction,
+  ) {
+    const size = GameConstants.chunkSize;
+    final innerY = (edgeY - direction).clamp(0, size - 1);
+    return List.generate(size, (x) {
+      final edgeCell = cells[edgeY][x];
+      final innerCell = cells[innerY][x];
+      // Linear extrapolation: predict next SDF from the gradient
+      final extrapolatedSdf = edgeCell.sdf + (edgeCell.sdf - innerCell.sdf);
+      return TerrainCell(
+        type: extrapolatedSdf < 0 ? edgeCell.type : CellType.empty,
+        sdf: extrapolatedSdf,
+        stratum: edgeCell.stratum,
+      );
+    });
+  }
+
+  /// Extrapolate a column beyond the chunk edge for smooth border synthesis.
+  static List<TerrainCell> _extrapolateCol(
+    List<List<TerrainCell>> cells,
+    int edgeX,
+    int direction,
+  ) {
+    const size = GameConstants.chunkSize;
+    final innerX = (edgeX - direction).clamp(0, size - 1);
+    return List.generate(size, (y) {
+      final edgeCell = cells[y][edgeX];
+      final innerCell = cells[y][innerX];
+      final extrapolatedSdf = edgeCell.sdf + (edgeCell.sdf - innerCell.sdf);
+      return TerrainCell(
+        type: extrapolatedSdf < 0 ? edgeCell.type : CellType.empty,
+        sdf: extrapolatedSdf,
+        stratum: edgeCell.stratum,
+      );
+    });
   }
 
   String _chunkKey(int cx, int cy) => '$cx,$cy';

@@ -22,7 +22,7 @@ class ExplosionSystem {
     // Track chain explosion positions
     final chainExplosions = <_ChainExplosion>[];
 
-    // 1. Remove terrain cells in radius
+    // 1. Check for chain reactions before carving
     for (int dy = -radius; dy <= radius; dy++) {
       for (int dx = -radius; dx <= radius; dx++) {
         if (dx * dx + dy * dy > radius * radius) continue;
@@ -31,7 +31,6 @@ class ExplosionSystem {
         final y = gridY + dy;
         final cellType = game.getCellType(x, y);
 
-        // Check for chain reaction triggers
         if (cellType == CellType.lava.index) {
           chainExplosions.add(_ChainExplosion(
             position: Vector2(x.toDouble(), y.toDouble()),
@@ -45,17 +44,33 @@ class ExplosionSystem {
             radius: (radius * 1.2).round(),
           ));
         }
-
-        game.removeTerrainCell(x, y);
       }
     }
 
-    // 2. Apply radial impulse to all dynamic bodies
+    // Carve terrain using SDF sphere subtraction for smooth edges
+    game.chunkManager.drillAtWorld(
+      position.x,
+      position.y,
+      radius.toDouble(),
+      smoothK: 0.5,
+    );
+
+    // 2. Apply radial impulse to all dynamic bodies (including robot)
     _applyRadialImpulse(position, radius.toDouble() * 2, force);
 
-    // 3. Emit explosion particles + SFX
+    // 2b. Apply hull damage to robot based on distance from explosion
+    final podDist = (game.pod.position - position).length;
+    final blastRadius = radius.toDouble() * 1.5;
+    if (podDist < blastRadius) {
+      final damageRatio = 1.0 - (podDist / blastRadius);
+      final damage = damageRatio * radius * 2.0; // Scale damage with radius
+      game.hullSystem.takeDamage(damage);
+    }
+
+    // 3. Emit explosion particles + shockwave ring + SFX
     game.audioManager.playExplosion();
     game.particleSystem.emitExplosionDebris(position, radius);
+    game.particleSystem.emitShockwaveRing(position, radius.toDouble());
 
     // 4. Screen shake (trauma-based with decay) + haptic
     final trauma = radius == GameConstants.dynamiteRadius

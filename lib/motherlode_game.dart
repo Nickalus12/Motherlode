@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:flame/events.dart';
 import 'package:flame_forge2d/flame_forge2d.dart'
     hide ParticleSystem, ParticleType;
+import 'package:forge2d/forge2d.dart' as forge2d_settings show maxTranslation, maxTranslationSquared;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import 'package:motherlode/entities/pod/pod.dart';
@@ -20,7 +22,9 @@ import 'package:motherlode/systems/depth_system.dart';
 import 'package:motherlode/systems/fuel_system.dart';
 import 'package:motherlode/systems/hull_system.dart';
 import 'package:motherlode/systems/creature_spawner.dart';
+import 'package:motherlode/systems/deployable_system.dart';
 import 'package:motherlode/systems/earthquake_system.dart';
+import 'package:motherlode/systems/market_system.dart';
 import 'package:motherlode/rendering/item_sprite_manager.dart';
 import 'package:motherlode/systems/audio_manager.dart';
 import 'package:motherlode/utils/debug_log.dart';
@@ -81,6 +85,8 @@ class MotherlodeGame extends Forge2DGame
   late final CreatureSpawner creatureSpawner;
   late final AudioManager audioManager;
   late final CameraSystem cameraSystem;
+  late final MarketSystem marketSystem;
+  late final DeployableSystem deployableSystem;
 
   // Player state
   double playerCash = GameConstants.startingCash;
@@ -98,6 +104,8 @@ class MotherlodeGame extends Forge2DGame
   int nanobotCount = 0;
   int teleporterCount = 0;
   int transmitterCount = 0;
+  int supportBeamCount = 0;
+  int flareCount = 0;
 
   // Collectibles
   int ancientScrollCount = 0;
@@ -127,6 +135,14 @@ class MotherlodeGame extends Forge2DGame
       chunkManager.preloadChunkData(genesisResult!.chunks);
     }
 
+    // Limit maximum body translation per step to prevent tunneling at low fps.
+    // Default is 2.0 tiles/step. 1.0 tiles/step at 30fps = 30 tiles/s,
+    // well above podMaxSpeed (10 m/s) while still preventing tunneling.
+    // The old 0.5 was too restrictive, causing sluggish/jerky movement when
+    // physics couldn't move the body far enough per step to match forces.
+    forge2d_settings.maxTranslation = 1.0;
+    forge2d_settings.maxTranslationSquared = 1.0;
+
     // Initialize systems
     depthSystem = DepthSystem();
     fuelSystem = FuelSystem(game: this);
@@ -142,6 +158,8 @@ class MotherlodeGame extends Forge2DGame
     creatureSpawner = CreatureSpawner(seed: worldSeed);
     audioManager = AudioManager();
     cameraSystem = CameraSystem();
+    marketSystem = MarketSystem();
+    deployableSystem = DeployableSystem(game: this);
 
     // Preload ore sprite sheets for terrain rendering
     final oreSpritePaths =
@@ -192,7 +210,7 @@ class MotherlodeGame extends Forge2DGame
     // Determine safe spawn position above the surface
     final spawnY = _findSafeSpawnY();
 
-    // Create player pod at safe position
+    // Create player robot at safe position
     pod = Pod(game: this, spawnY: spawnY);
     podController = PodController(pod: pod);
 
@@ -207,16 +225,18 @@ class MotherlodeGame extends Forge2DGame
     world.add(sdfCollisionSystem);
     world.add(creatureSpawner);
     world.add(audioManager);
+    world.add(marketSystem);
+    world.add(deployableSystem);
 
     // Add render overlays (camera-relative)
     camera.viewport.add(lightingSystem);
-    camera.viewport.add(perfMonitor);
+    if (kDebugMode) camera.viewport.add(perfMonitor);
 
-    // Wait for pod to be ready before camera follow
+    // Wait for robot to be ready before camera follow
     try {
       await pod.loaded;
     } catch (_) {
-      // Pod may still work with fallback rendering
+      // Robot may still work with fallback rendering
     }
     // CameraSystem handles follow + look-ahead + dynamic zoom
     world.add(cameraSystem);
@@ -225,27 +245,70 @@ class MotherlodeGame extends Forge2DGame
     onReady?.call();
   }
 
-  /// Find a safe Y position to spawn the pod above the terrain surface.
+  /// Find a safe Y position to spawn the robot above the terrain surface.
+  ///
+  /// Scans down from the sky at x=0 to find the first solid cell, then
+  /// places the robot 3 meters above it so it doesn't float or clip.
   double _findSafeSpawnY() {
-    // Landing pad is always flat at y=0, spawn well above it
-    return -5.0;
+    // Scan downward from well above ground (y=-20) to find the surface
+    for (int y = -20; y < 20; y++) {
+      final cell = chunkManager.getTerrainCell(0, y);
+      if (cell != null && cell.sdf < 0) {
+        // Found solid terrain — spawn 3 meters above it
+        return y.toDouble() - 3.0;
+      }
+    }
+    // Fallback: spawn above y=0 (the nominal surface line)
+    return -3.0;
   }
 
   @override
   void update(double dt) {
     if (isGameOver) return;
-    super.update(dt);
+    // Cap dt to prevent massive physics jumps during shader compilation or
+    // chunk loading. 1/30 (33ms) allows smooth 30fps physics while still
+    // protecting against massive spikes. The old 1/20 (50ms) cap made
+    // physics feel laggy by effectively limiting to 20fps equivalent.
+    final cappedDt = dt.clamp(0.0, 1 / 30); // Max 33ms per frame
+    super.update(cappedDt);
 
     if (!pod.isMounted) return;
 
-    // Update depth based on pod position
+    // Update depth based on robot position
     depthSystem.updateDepth(pod.position.y);
 
     // Check if at surface
     isAtSurface = pod.position.y <= 0;
+
+    // Engine exhaust particles when thrusting
+    if (pod.state == PodState.flying && pod.thrustDirection.length2 > 0) {
+      particleSystem.emitEngineExhaust(
+        pod.position,
+        pod.body.linearVelocity,
+        pod.thrustDirection.x,
+        pod.thrustDirection.y,
+      );
+    }
+
+    // Ground movement dust trail
+    if (pod.podBody.isGrounded && pod.state != PodState.drilling) {
+      final horizSpeed = pod.body.linearVelocity.x;
+      if (horizSpeed.abs() > 1.0) {
+        particleSystem.emitMovementDust(
+          pod.position,
+          horizSpeed,
+          currentDepthFeet,
+        );
+      }
+    }
+
+    // Ambient depth particles (rate-limited internally)
+    if (!isAtSurface) {
+      particleSystem.emitAmbientParticles(pod.position, currentDepthFeet);
+    }
   }
 
-  /// Called when the pod runs out of hull HP or fuel
+  /// Called when the robot runs out of hull HP or fuel
   void triggerGameOver() {
     if (isGameOver) return;
     isGameOver = true;

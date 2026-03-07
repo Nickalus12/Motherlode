@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'dart:ui';
 
 import 'package:flame/components.dart' hide Vector2;
@@ -11,14 +12,17 @@ import 'package:motherlode/world/terrain_cell.dart';
 /// Dynamic falling dirt/rock body created from collapsed terrain
 ///
 /// Falls under gravity, bounces off terrain, deals hull damage
-/// on pod contact. Auto-sleeps after resting and converts to static terrain.
+/// on robot contact. Auto-sleeps after resting and converts to static terrain.
+/// Size and mass vary by material type.
 class DebrisBody extends BodyComponent with ContactCallbacks {
   final Vector2 initialPosition;
   final Color color;
   final double mass;
+  final double halfSize;
 
   static const double sleepAfterSeconds = 3.0;
   static const double sleepVelocityThreshold = 0.5; // m/s
+  static final Random _rng = Random();
 
   double _restingTime = 0.0;
   bool _settled = false;
@@ -32,37 +36,52 @@ class DebrisBody extends BodyComponent with ContactCallbacks {
     ..style = PaintingStyle.stroke
     ..strokeWidth = 0.04;
 
+  // Cached rect for rendering
+  late final Rect _drawRect =
+      Rect.fromLTWH(-halfSize, -halfSize, halfSize * 2, halfSize * 2);
+
   /// Callback invoked when this debris converts to terrain.
   /// Parameters: grid x, grid y of the settled cell.
   void Function(int gridX, int gridY)? onConvertToTerrain;
+
+  /// Callback invoked when debris settles (for impact dust).
+  void Function(Vector2 position)? onSettle;
 
   DebrisBody({
     required this.initialPosition,
     required this.color,
     this.mass = 50.0,
+    this.halfSize = 0.3,
     this.onConvertToTerrain,
+    this.onSettle,
   });
 
   bool get isSettled => _settled;
 
   @override
   Body createBody() {
+    // Random angular velocity on spawn (±3 rad/s)
+    final angularVel = (_rng.nextDouble() - 0.5) * 6.0;
+
     final bodyDef = BodyDef(
       type: BodyType.dynamic,
       position: initialPosition,
       linearDamping: 0.3,
       angularDamping: 0.5,
+      angularVelocity: angularVel,
     );
 
     final body = world.createBody(bodyDef);
 
-    // Debris shape - small square
-    final shape = PolygonShape()..setAsBoxXY(0.3, 0.3);
+    final shape = PolygonShape()..setAsBoxXY(halfSize, halfSize);
+    final area = (halfSize * 2) * (halfSize * 2);
 
     body.createFixture(FixtureDef(shape)
-      ..density = mass / (0.6 * 0.6)
+      ..density = mass / area
       ..friction = 0.8
       ..restitution = 0.2
+      ..filter.categoryBits = GameConstants.collisionCategoryDebris
+      ..filter.maskBits = GameConstants.collisionMaskDebris
       ..userData = this);
 
     return body;
@@ -88,20 +107,17 @@ class DebrisBody extends BodyComponent with ContactCallbacks {
 
   @override
   void render(Canvas canvas) {
-    canvas.drawRect(
-      const Rect.fromLTWH(-0.3, -0.3, 0.6, 0.6),
-      _fillPaint,
-    );
-    canvas.drawRect(
-      const Rect.fromLTWH(-0.3, -0.3, 0.6, 0.6),
-      _outlinePaint,
-    );
+    canvas.drawRect(_drawRect, _fillPaint);
+    canvas.drawRect(_drawRect, _outlinePaint);
   }
 
   /// Convert this debris body to a static terrain cell and remove it
   void _convertToStaticTerrain() {
     if (_settled) return;
     _settled = true;
+
+    // Emit impact dust at settle position
+    onSettle?.call(body.position.clone());
 
     // Snap position to nearest grid cell
     final gridX = body.position.x.round();
@@ -136,8 +152,8 @@ class DebrisBody extends BodyComponent with ContactCallbacks {
 /// Manages active debris bodies, enforcing max count and providing
 /// the terrain conversion callback.
 class DebrisManager extends Component with HasGameReference<MotherlodeGame> {
-  static const int maxDebris = 150;
-  static const int forceSettleCount = 20;
+  static const int maxDebris = 50;
+  static const int forceSettleCount = 10;
 
   final List<DebrisBody> _activeDebris = [];
 
@@ -146,6 +162,7 @@ class DebrisManager extends Component with HasGameReference<MotherlodeGame> {
     required Vector2 position,
     required Color color,
     double mass = 50.0,
+    double halfSize = 0.3,
   }) {
     // Enforce body count limit
     if (_activeDebris.length >= maxDebris) {
@@ -156,11 +173,22 @@ class DebrisManager extends Component with HasGameReference<MotherlodeGame> {
       initialPosition: position,
       color: color,
       mass: mass,
+      halfSize: halfSize,
       onConvertToTerrain: _onDebrisConvert,
+      onSettle: _onDebrisSettle,
     );
 
     _activeDebris.add(debris);
     return debris;
+  }
+
+  /// Emit a small dust puff when debris settles
+  void _onDebrisSettle(Vector2 position) {
+    if (!game.isMounted) return;
+    game.particleSystem.emitDrillParticles(
+      position,
+      const Color(0xFF8B7355), // Dusty brown
+    );
   }
 
   void _onDebrisConvert(int gridX, int gridY) {
@@ -187,12 +215,18 @@ class DebrisManager extends Component with HasGameReference<MotherlodeGame> {
     }
   }
 
+  double _cleanupTimer = 0;
+
   @override
   void update(double dt) {
     super.update(dt);
-    // Clean up settled debris from tracking list
-    _activeDebris.removeWhere((d) => d.isSettled);
+    // Rate-limit cleanup to avoid per-frame list iteration
+    _cleanupTimer += dt;
+    if (_cleanupTimer >= 0.5) {
+      _cleanupTimer = 0;
+      _activeDebris.removeWhere((d) => d.isSettled);
+    }
   }
 
-  int get activeCount => _activeDebris.where((d) => !d.isSettled).length;
+  int get activeCount => _activeDebris.length;
 }

@@ -4,54 +4,63 @@ import 'package:flame/components.dart';
 
 import 'package:motherlode/motherlode_game.dart';
 
-/// SDF-native terrain collision system.
+/// SDF-based ground detection and fall damage system.
 ///
-/// Replaces Forge2D terrain fixtures with direct SDF field queries for
-/// smooth, sub-cell collision response. The pod's Forge2D body is still
-/// used for gravity and momentum, but terrain penetration is resolved
-/// here via SDF gradient projection.
-///
-/// Drilling is handled separately by [DrillSystem], which delegates SDF
-/// carving to [ChunkManager.drillAtWorld].
+/// Forge2D handles actual collision response via chunk fixtures.
+/// This system supplements Forge2D by:
+/// - Detecting ground contact via SDF probes (for drill gating)
+/// - Calculating fall damage from vertical velocity
+/// - Capping velocity to prevent tunneling
+/// - Providing slope normal for rendering/particles
 class SdfCollisionSystem extends Component
     with HasGameReference<MotherlodeGame> {
-  /// Pod half-dimensions in Forge2D meters (matches pod shape in Pod.createBody).
   static const double _podHalfWidth = 0.9;
   static const double _podHalfHeight = 1.1;
-
-  /// Friction coefficient applied tangentially when sliding along terrain.
-  static const double _frictionCoeff = 0.4;
-
-  /// Small epsilon for gradient sampling offset.
   static const double _gradientEps = 0.1;
+  static const double _deadZone = 0.05;
 
-  /// Maximum penetration correction per frame to avoid jitter.
-  static const double _maxPushOut = 0.5;
-
-  /// Minimum penetration before push-out kicks in (dead-zone to avoid jitter).
-  static const double _deadZone = 0.002;
-
-  // Probe points relative to pod center (computed once).
-  // Bottom probes sit at the hull boundary so the pod rests flush on terrain.
-  static final List<Vector2> _probeOffsets = [
-    Vector2(0, _podHalfHeight), // bottom center
-    Vector2(-_podHalfWidth * 0.5, _podHalfHeight), // bottom mid-left
-    Vector2(_podHalfWidth * 0.5, _podHalfHeight), // bottom mid-right
-    Vector2(-_podHalfWidth, _podHalfHeight), // bottom left
-    Vector2(_podHalfWidth, _podHalfHeight), // bottom right
-    Vector2(-_podHalfWidth, 0), // left center
-    Vector2(_podHalfWidth, 0), // right center
-    Vector2(-_podHalfWidth, _podHalfHeight * 0.5), // left mid-low
-    Vector2(_podHalfWidth, _podHalfHeight * 0.5), // right mid-low
-    Vector2(-_podHalfWidth, -_podHalfHeight), // top left
-    Vector2(_podHalfWidth, -_podHalfHeight), // top right
+  /// Bottom probe offsets for ground detection only.
+  /// Probes sit exactly at hull bottom (not below) to match Forge2D contact
+  /// surface and prevent the "floating" illusion caused by detecting ground
+  /// too early via probes that extend past the collision shape.
+  static final List<Vector2> _bottomProbes = [
+    Vector2(0, _podHalfHeight), // bottom center (flush with hull)
+    Vector2(-_podHalfWidth * 0.5, _podHalfHeight),
+    Vector2(_podHalfWidth * 0.5, _podHalfHeight),
+    Vector2(-_podHalfWidth * 0.8, _podHalfHeight),
+    Vector2(_podHalfWidth * 0.8, _podHalfHeight),
   ];
+
+  /// Hull perimeter probes for penetration detection (safety net).
+  /// Samples around the full pod hull to detect when the body has
+  /// entered terrain despite Forge2D collision (e.g., during fixture
+  /// rebuild after drilling).
+  static final List<Vector2> _hullProbes = [
+    // Bottom
+    Vector2(0, _podHalfHeight),
+    Vector2(-_podHalfWidth, _podHalfHeight),
+    Vector2(_podHalfWidth, _podHalfHeight),
+    // Sides (mid-height)
+    Vector2(-_podHalfWidth, 0),
+    Vector2(_podHalfWidth, 0),
+    // Lower sides
+    Vector2(-_podHalfWidth, _podHalfHeight * 0.5),
+    Vector2(_podHalfWidth, _podHalfHeight * 0.5),
+    // Center (detects full embedding)
+    Vector2(0, 0),
+  ];
+
+  /// Maximum push-out distance per frame to avoid teleporting
+  static const double _maxPushOut = 0.4;
 
   bool _isOnGround = false;
   bool _wasOnGround = false;
+  double _prevVerticalSpeed = 0;
 
-  /// Whether the pod is resting on or very close to terrain.
+  final Vector2 _normal = Vector2.zero();
+
   bool get isOnGround => _isOnGround;
+  final Vector2 slopeNormal = Vector2(0, -1);
 
   @override
   void update(double dt) {
@@ -61,80 +70,137 @@ class SdfCollisionSystem extends Component
     if (!pod.isMounted) return;
 
     final body = pod.body;
-    final pos = body.position.clone();
-    final vel = body.linearVelocity.clone();
+    final pos = body.position;
+    final vel = body.linearVelocity;
 
-    // Capture pre-collision velocity for fall damage detection
-    final preCollisionSpeed = vel.length;
+    // Capture vertical speed before any modification (for fall damage)
+    final verticalSpeed = vel.y;
 
-    bool touchedGround = false;
+    // -------------------------------------------------------------------
+    // Penetration push-out (safety net): if the pod hull is inside terrain
+    // (SDF < 0), push the body out along the SDF gradient. This catches
+    // cases where Forge2D fixture collision misses during rebuild after
+    // drilling, or at chunk boundaries with gaps between edge shapes.
+    // -------------------------------------------------------------------
+    double worstPenetration = 0;
+    double pushX = 0, pushY = 0;
 
-    for (final offset in _probeOffsets) {
+    for (final offset in _hullProbes) {
       final probeX = pos.x + offset.x;
       final probeY = pos.y + offset.y;
-
       final sdf = sampleSdf(probeX, probeY);
 
-      if (sdf < 0) {
-        // Bottom probes (at full pod height) indicate ground contact
-        if (offset.y >= _podHalfHeight) {
-          touchedGround = true;
-        }
-
-        // Skip push-out for very shallow penetration to avoid jitter
-        if (sdf < -_deadZone) {
-          // Inside terrain — compute gradient (surface normal)
-          final normal = _sdfGradient(probeX, probeY);
-          final penetration = (-sdf - _deadZone).clamp(0.0, _maxPushOut);
-
-          // Push pod out along the normal
-          pos.x += normal.x * penetration;
-          pos.y += normal.y * penetration;
-
-          // Remove velocity component into the terrain
-          final velDotNormal = vel.dot(normal);
-          if (velDotNormal < 0) {
-            vel.x -= velDotNormal * normal.x;
-            vel.y -= velDotNormal * normal.y;
-
-            // Apply friction along the tangent
-            final tangent = Vector2(-normal.y, normal.x);
-            final velDotTangent = vel.dot(tangent);
-            final frictionMag = velDotTangent.abs() * _frictionCoeff * dt;
-            if (frictionMag < velDotTangent.abs()) {
-              vel.x -= tangent.x * velDotTangent.sign * frictionMag;
-              vel.y -= tangent.y * velDotTangent.sign * frictionMag;
-            } else {
-              vel.x -= tangent.x * velDotTangent;
-              vel.y -= tangent.y * velDotTangent;
-            }
-          }
+      if (sdf < -_deadZone) {
+        final penetration = -sdf;
+        if (penetration > worstPenetration) {
+          worstPenetration = penetration;
+          _computeGradient(probeX, probeY, _normal);
+          // Push out along negative gradient (toward air)
+          pushX = -_normal.x * penetration;
+          pushY = -_normal.y * penetration;
         }
       }
     }
 
-    // Apply corrected position and velocity back to the Forge2D body
-    body.setTransform(pos, body.angle);
-    body.linearVelocity = vel;
+    if (worstPenetration > _deadZone) {
+      // Clamp push-out magnitude to prevent teleporting
+      final pushLen = sqrt(pushX * pushX + pushY * pushY);
+      if (pushLen > _maxPushOut) {
+        final scale = _maxPushOut / pushLen;
+        pushX *= scale;
+        pushY *= scale;
+      }
 
-    // Fall damage and landing SFX: detect transition from airborne to ground contact
-    if (touchedGround && !_wasOnGround && preCollisionSpeed > 0) {
-      game.hullSystem.takeFallDamage(preCollisionSpeed);
-      game.audioManager.playLanding();
+      // Move body out of terrain
+      body.setTransform(
+        Vector2(pos.x + pushX, pos.y + pushY),
+        body.angle,
+      );
+
+      // Kill velocity component into the terrain so the pod doesn't
+      // immediately re-enter on the next frame
+      if (pushLen > 0.001) {
+        final pushNormX = pushX / pushLen;
+        final pushNormY = pushY / pushLen;
+        // Dot product of velocity with inward direction (negative push normal)
+        final intoTerrain = vel.x * (-pushNormX) + vel.y * (-pushNormY);
+        if (intoTerrain > 0) {
+          vel.x += pushNormX * intoTerrain;
+          vel.y += pushNormY * intoTerrain;
+        }
+      }
     }
 
-    // Update ground state (used by Pod for state machine & drill gating)
+    // -------------------------------------------------------------------
+    // Ground detection via SDF probes
+    // Supplements Forge2D contact callbacks — only SETS grounded, never
+    // clears it. Forge2D endContact handles clearing. This prevents the
+    // two systems from fighting and flickering isGrounded each frame.
+    // -------------------------------------------------------------------
+    bool touchedGround = false;
+    int groundContacts = 0;
+    double normalSumX = 0, normalSumY = 0;
+
+    for (final offset in _bottomProbes) {
+      final probeX = pos.x + offset.x;
+      final probeY = pos.y + offset.y;
+      final sdf = sampleSdf(probeX, probeY);
+
+      if (sdf < _deadZone) {
+        touchedGround = true;
+        groundContacts++;
+        _computeGradient(probeX, probeY, _normal);
+        normalSumX += _normal.x;
+        normalSumY += _normal.y;
+      }
+    }
+
+    // Average slope normal
+    if (groundContacts > 0) {
+      final inv = 1.0 / groundContacts;
+      slopeNormal.setValues(normalSumX * inv, normalSumY * inv);
+      final len = slopeNormal.length;
+      if (len > 1e-6) {
+        slopeNormal.scale(1.0 / len);
+      } else {
+        slopeNormal.setValues(0, -1);
+      }
+    } else {
+      slopeNormal.setValues(0, -1);
+    }
+
+    // Fall damage + landing effects: trigger on landing (ground contact after being airborne)
+    if (touchedGround && !_wasOnGround && _prevVerticalSpeed > 1.0) {
+      // Landing dust burst (even soft landings get a small puff)
+      game.particleSystem.emitLandingDust(
+        pos,
+        _prevVerticalSpeed,
+        game.currentDepthFeet,
+      );
+
+      if (_prevVerticalSpeed > 3.0) {
+        game.hullSystem.takeFallDamage(_prevVerticalSpeed);
+        game.audioManager.playLanding();
+      }
+    }
+
     _wasOnGround = _isOnGround;
     _isOnGround = touchedGround;
-    pod.podBody.isGrounded = _isOnGround;
+    // Only SET grounded from SDF probes, never clear it.
+    // Forge2D contact callbacks (Pod.beginContact/endContact) manage the
+    // authoritative grounded state. SDF probes supplement by detecting ground
+    // in cases where Forge2D edge shapes have gaps. This prevents the two
+    // systems from fighting and causing ground-state flicker.
+    if (_isOnGround) {
+      pod.podBody.isGrounded = true;
+    }
+    _prevVerticalSpeed = verticalSpeed;
   }
 
-  // ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
   // SDF Sampling
-  // ---------------------------------------------------------------------------
+  // -------------------------------------------------------------------------
 
-  /// Sample the terrain SDF at a continuous world position using bilinear
-  /// interpolation of the four surrounding cell corners.
   double sampleSdf(double worldX, double worldY) {
     final cx = worldX.floor();
     final cy = worldY.floor();
@@ -152,28 +218,39 @@ class SdfCollisionSystem extends Component
         s11 * fx * fy;
   }
 
-  /// Get the raw SDF value of a single terrain cell at integer grid coords.
-  /// Returns a positive value (air) if the cell doesn't exist or is empty.
   double _getCellSdf(int x, int y) {
     final cell = game.chunkManager.getTerrainCell(x, y);
     if (cell == null) return 1.0;
     return cell.sdf;
   }
 
-  /// Compute the normalized SDF gradient (surface normal pointing outward)
-  /// at a continuous world position using central differences.
-  Vector2 _sdfGradient(double x, double y) {
-    final sdfRight = sampleSdf(x + _gradientEps, y);
-    final sdfLeft = sampleSdf(x - _gradientEps, y);
-    final sdfDown = sampleSdf(x, y + _gradientEps);
-    final sdfUp = sampleSdf(x, y - _gradientEps);
+  void _computeGradient(double x, double y, Vector2 out) {
+    final cx = x.round();
+    final cy = y.round();
+    final nearGrid = (x - cx).abs() < 0.3 && (y - cy).abs() < 0.3;
 
-    final gx = sdfRight - sdfLeft;
-    final gy = sdfDown - sdfUp;
+    double gx, gy;
+    if (nearGrid) {
+      final sdfRight = _getCellSdf(cx + 1, cy);
+      final sdfLeft = _getCellSdf(cx - 1, cy);
+      final sdfDown = _getCellSdf(cx, cy + 1);
+      final sdfUp = _getCellSdf(cx, cy - 1);
+      gx = sdfRight - sdfLeft;
+      gy = sdfDown - sdfUp;
+    } else {
+      final sdfRight = sampleSdf(x + _gradientEps, y);
+      final sdfLeft = sampleSdf(x - _gradientEps, y);
+      final sdfDown = sampleSdf(x, y + _gradientEps);
+      final sdfUp = sampleSdf(x, y - _gradientEps);
+      gx = sdfRight - sdfLeft;
+      gy = sdfDown - sdfUp;
+    }
 
     final len = sqrt(gx * gx + gy * gy);
-    if (len < 1e-8) return Vector2(0, -1); // default up if flat
-
-    return Vector2(gx / len, gy / len);
+    if (len < 1e-8) {
+      out.setValues(0, -1);
+    } else {
+      out.setValues(gx / len, gy / len);
+    }
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 
 import 'package:motherlode/data/special_items.dart';
 import 'package:motherlode/data/upgrade_definitions.dart';
@@ -24,7 +25,7 @@ class ShopOverlay extends StatefulWidget {
 }
 
 class _ShopOverlayState extends State<ShopOverlay>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late final TabController _tabController;
 
   static const _bgColor = Color(0xFF0D0D12);
@@ -33,16 +34,75 @@ class _ShopOverlayState extends State<ShopOverlay>
   static const _accentAmber = Color(0xFFF5A623);
   static const _borderColor = Color(0xFF2A2A3A);
 
+  // Cash rolling animation
+  double _displayCash = 0;
+  double _targetCash = 0;
+  late final AnimationController _cashAnimController;
+
+  // Purchase flash animation
+  String? _flashItemKey;
+  late final AnimationController _flashController;
+
+  // "SOLD!" pop animation
+  late final AnimationController _soldPopController;
+  bool _showSoldPop = false;
+
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    _displayCash = widget.game.playerCash;
+    _targetCash = widget.game.playerCash;
+
+    _cashAnimController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..addListener(() {
+        setState(() {
+          _displayCash = _displayCash +
+              (_targetCash - _displayCash) * _cashAnimController.value;
+        });
+      });
+
+    _flashController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+
+    _soldPopController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          setState(() => _showSoldPop = false);
+        }
+      });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _cashAnimController.dispose();
+    _flashController.dispose();
+    _soldPopController.dispose();
     super.dispose();
+  }
+
+  void _animateCashChange() {
+    _targetCash = widget.game.playerCash;
+    _cashAnimController.forward(from: 0);
+  }
+
+  void _triggerPurchaseFlash(String itemKey) {
+    _flashItemKey = itemKey;
+    _flashController.forward(from: 0);
+    HapticFeedback.lightImpact();
+  }
+
+  void _triggerSoldPop() {
+    _showSoldPop = true;
+    _soldPopController.forward(from: 0);
+    HapticFeedback.lightImpact();
   }
 
   @override
@@ -110,9 +170,11 @@ class _ShopOverlayState extends State<ShopOverlay>
                     color: _accentAmber, size: 18),
                 const SizedBox(width: 6),
                 Text(
-                  '\$${_formatCash(widget.game.playerCash)}',
+                  '\$${_formatCash(_displayCash)}',
                   style: TextStyle(
-                    color: _accentAmber,
+                    color: _displayCash != _targetCash
+                        ? Colors.white
+                        : _accentAmber,
                     fontSize: 20,
                     fontWeight: FontWeight.bold,
                     shadows: [
@@ -330,7 +392,98 @@ class _ShopOverlayState extends State<ShopOverlay>
   }
 
   Widget _buildMineralProcessor() {
-    return InventoryPanel(game: widget.game);
+    final boom = widget.game.marketSystem.activeBoom;
+    return Column(
+      children: [
+        if (boom != null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Colors.orange.withValues(alpha: 0.2),
+                  Colors.amber.withValues(alpha: 0.1),
+                  Colors.orange.withValues(alpha: 0.2),
+                ],
+              ),
+              border: Border(
+                bottom: BorderSide(
+                  color: Colors.orange.withValues(alpha: 0.3),
+                ),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.trending_up,
+                    color: Colors.orangeAccent, size: 16),
+                const SizedBox(width: 6),
+                Text(
+                  '${boom.oreName} BOOM  ${boom.multiplier}x  '
+                  '${boom.remainingSeconds.toInt()}s',
+                  style: const TextStyle(
+                    color: Colors.orangeAccent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: Stack(
+            children: [
+              InventoryPanel(
+                game: widget.game,
+                onSold: () {
+                  _triggerSoldPop();
+                  _animateCashChange();
+                },
+              ),
+              // "SOLD!" pop overlay
+              if (_showSoldPop)
+                Center(
+                  child: AnimatedBuilder(
+                    animation: _soldPopController,
+                    builder: (context, _) {
+                      final t = _soldPopController.value;
+                      final scale = 0.5 + t * 1.5;
+                      final opacity = t < 0.5 ? 1.0 : (1.0 - (t - 0.5) * 2.0);
+                      return Transform.scale(
+                        scale: scale,
+                        child: Opacity(
+                          opacity: opacity.clamp(0.0, 1.0),
+                          child: Text(
+                            'SOLD!',
+                            style: TextStyle(
+                              color: Colors.green,
+                              fontSize: 36,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 4,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.green.withValues(alpha: 0.6),
+                                  blurRadius: 12,
+                                ),
+                                const Shadow(
+                                  color: Colors.black,
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildConsumablesShop() {
@@ -404,6 +557,22 @@ class _ShopOverlayState extends State<ShopOverlay>
           () => _buyConsumable(context, SpecialItems.matterTransmitter,
               () => widget.game.transmitterCount++),
         ),
+        _buildConsumableItem(
+          SpecialItems.supportBeam,
+          widget.game.supportBeamCount,
+          Icons.view_column,
+          Colors.brown,
+          () => _buyConsumable(context, SpecialItems.supportBeam,
+              () => widget.game.supportBeamCount++),
+        ),
+        _buildConsumableItem(
+          SpecialItems.flare,
+          widget.game.flareCount,
+          Icons.flare,
+          Colors.yellow,
+          () => _buyConsumable(
+              context, SpecialItems.flare, () => widget.game.flareCount++),
+        ),
       ],
     );
   }
@@ -416,94 +585,119 @@ class _ShopOverlayState extends State<ShopOverlay>
     VoidCallback onBuy,
   ) {
     final canAfford = widget.game.playerCash >= item.cost;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: _cardColor,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: canAfford ? accentColor.withValues(alpha: 0.2) : _borderColor,
-        ),
-      ),
-      child: Row(
-        children: [
-          // Icon or sprite
-          Container(
-            width: 42,
-            height: 42,
+    final isFlashing = _flashItemKey == item.name;
+    return AnimatedBuilder(
+      animation: _flashController,
+      builder: (context, child) {
+        final flashValue = isFlashing ? (1.0 - _flashController.value) : 0.0;
+        final scaleValue =
+            isFlashing ? 1.0 + 0.05 * (1.0 - _flashController.value) : 1.0;
+        return Transform.scale(
+          scale: scaleValue,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  accentColor.withValues(alpha: 0.2),
-                  accentColor.withValues(alpha: 0.05),
-                ],
-              ),
+              color: Color.lerp(_cardColor, Colors.green, flashValue * 0.3),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: accentColor.withValues(alpha: 0.2)),
-            ),
-            child: item.spritePath != null
-                ? ClipRRect(
-                    borderRadius: BorderRadius.circular(9),
-                    child: Image.asset(
-                      'assets/images/${item.spritePath}',
-                      width: 30,
-                      height: 30,
-                      fit: BoxFit.contain,
-                    ),
-                  )
-                : Icon(icon, color: accentColor, size: 22),
-          ),
-          const SizedBox(width: 12),
-
-          // Info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.name,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  item.description,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.4),
-                    fontSize: 11,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Text(
-                      'Owned: $currentCount',
-                      style: TextStyle(
-                        color: accentColor.withValues(alpha: 0.7),
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
+              border: Border.all(
+                color: flashValue > 0
+                    ? Colors.green.withValues(alpha: 0.5 + flashValue * 0.5)
+                    : (canAfford
+                        ? accentColor.withValues(alpha: 0.2)
+                        : _borderColor),
+              ),
+              boxShadow: flashValue > 0
+                  ? [
+                      BoxShadow(
+                        color: Colors.green.withValues(alpha: flashValue * 0.3),
+                        blurRadius: 12,
                       ),
+                    ]
+                  : null,
+            ),
+            child: Row(
+              children: [
+                // Icon or sprite
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        accentColor.withValues(alpha: 0.2),
+                        accentColor.withValues(alpha: 0.05),
+                      ],
                     ),
-                  ],
+                    borderRadius: BorderRadius.circular(10),
+                    border:
+                        Border.all(color: accentColor.withValues(alpha: 0.2)),
+                  ),
+                  child: item.spritePath != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(9),
+                          child: Image.asset(
+                            'assets/images/${item.spritePath}',
+                            width: 30,
+                            height: 30,
+                            fit: BoxFit.contain,
+                          ),
+                        )
+                      : Icon(icon, color: accentColor, size: 22),
+                ),
+                const SizedBox(width: 12),
+
+                // Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        item.description,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.4),
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          Text(
+                            'Owned: $currentCount',
+                            style: TextStyle(
+                              color: accentColor.withValues(alpha: 0.7),
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Buy button
+                _buildSmallBuyButton(
+                  cost: '\$${item.cost}',
+                  canAfford: canAfford,
+                  onPressed: canAfford ? onBuy : null,
                 ),
               ],
             ),
           ),
-
-          // Buy button
-          _buildSmallBuyButton(
-            cost: '\$${item.cost}',
-            canAfford: canAfford,
-            onPressed: canAfford ? onBuy : null,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -619,6 +813,8 @@ class _ShopOverlayState extends State<ShopOverlay>
 
     if (widget.game.spendCash(cost)) {
       setState(onConfirmed);
+      _animateCashChange();
+      HapticFeedback.lightImpact();
     }
   }
 
@@ -630,7 +826,10 @@ class _ShopOverlayState extends State<ShopOverlay>
       'Buy ${item.name}?',
       'Purchase ${item.name} for \$${item.cost}?',
       item.cost.toDouble(),
-      applyPurchase,
+      () {
+        applyPurchase();
+        _triggerPurchaseFlash(item.name);
+      },
     );
   }
 

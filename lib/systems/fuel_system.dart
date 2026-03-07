@@ -7,7 +7,7 @@ import 'package:motherlode/utils/constants.dart';
 /// Fuel consumption and management system
 ///
 /// Fuel is consumed by movement (thrust) and drilling.
-/// Low fuel reduces thrust power. Running out leaves the pod stranded.
+/// Low fuel reduces thrust power. Running out leaves the robot stranded.
 class FuelSystem extends Component {
   final MotherlodeGame game;
 
@@ -17,6 +17,13 @@ class FuelSystem extends Component {
   // Warning flags
   bool _lowFuelWarningActive = false;
   bool _fuelDeathTriggered = false;
+  double _outOfFuelTimer = 0;
+  static const double _outOfFuelGracePeriod = 10.0; // seconds before game over
+
+  // Low fuel audio warning (beep every 5 seconds when below 30%)
+  double _fuelWarningBeepCooldown = 0;
+  static const double _fuelWarningBeepInterval = 5.0;
+  static const double _fuelWarningThreshold = 0.3;
 
   FuelSystem({required this.game});
 
@@ -31,16 +38,34 @@ class FuelSystem extends Component {
   void update(double dt) {
     super.update(dt);
 
+    // Out of fuel underground: give player 10 seconds before game over
+    // (they might have a teleporter or transmitter)
     if (currentFuel <= 0 &&
         !game.isAtSurface &&
         !game.isGameOver &&
         !_fuelDeathTriggered) {
-      _fuelDeathTriggered = true;
-      game.triggerGameOver();
-      game.particleSystem.emitExplosionDebris(game.pod.position, 5);
-      game.audioManager.playExplosion();
-      game.earthquakeSystem.startShake(0.8, 0.6);
-      HapticFeedback.heavyImpact();
+      _outOfFuelTimer += dt;
+      if (_outOfFuelTimer >= _outOfFuelGracePeriod) {
+        _fuelDeathTriggered = true;
+        game.triggerGameOver();
+        game.particleSystem.emitExplosionDebris(game.pod.position, 5);
+        game.audioManager.playExplosion();
+        game.earthquakeSystem.startShake(0.8, 0.6);
+        HapticFeedback.heavyImpact();
+      }
+    } else if (currentFuel > 0 || game.isAtSurface) {
+      _outOfFuelTimer = 0;
+    }
+
+    // Low fuel audio warning: beep every 5 seconds when below 30%
+    if (fuelRatio > 0 && fuelRatio < _fuelWarningThreshold && !game.isAtSurface) {
+      _fuelWarningBeepCooldown -= dt;
+      if (_fuelWarningBeepCooldown <= 0) {
+        game.audioManager.playFuelWarning();
+        _fuelWarningBeepCooldown = _fuelWarningBeepInterval;
+      }
+    } else {
+      _fuelWarningBeepCooldown = 0;
     }
   }
 
@@ -96,9 +121,11 @@ class FuelSystem extends Component {
     };
   }
 
-  /// Load from save
+  /// Load from save (handles missing/null keys gracefully)
   void loadFromMap(Map<String, dynamic> map) {
-    currentFuel = (map['current'] as num).toDouble();
-    maxFuel = (map['max'] as num).toDouble();
+    currentFuel =
+        (map['current'] as num?)?.toDouble() ?? GameConstants.baseFuelCapacity;
+    maxFuel =
+        (map['max'] as num?)?.toDouble() ?? GameConstants.baseFuelCapacity;
   }
 }

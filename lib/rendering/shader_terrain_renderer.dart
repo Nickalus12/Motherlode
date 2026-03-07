@@ -74,7 +74,8 @@ class ShaderTerrainRenderer extends Component
     final screenScale = game.camera.viewfinder.zoom;
 
     for (final chunk in visibleChunks) {
-      _renderChunk(canvas, chunk, pod.position, lightRadius, depthFeet, screenScale);
+      _renderChunk(
+          canvas, chunk, pod.position, lightRadius, depthFeet, screenScale);
     }
   }
 

@@ -13,7 +13,7 @@ class GameConstants {
   static const double pixelsPerMeter = 24.0;
   static const double gravity = 9.8;
   static const double podBaseMass = 500.0;
-  static const double podLinearDamping = 0.8;
+  static const double podLinearDamping = 0.4;
   static const double podAngularDamping = 5.0;
 
   // Depth system (in feet)
@@ -44,17 +44,17 @@ class GameConstants {
   // Fuel
   static const double baseFuelCapacity = 10.0; // liters
   static const double fuelCostPerLiter = 10.0;
-  static const double fuelConsumptionIdle = 0.01;
-  static const double fuelConsumptionThrust = 0.05;
-  static const double fuelConsumptionDrill = 0.03;
+  static const double fuelConsumptionIdle = 0.003; // Near-zero when grounded
+  static const double fuelConsumptionThrust = 0.20; // ~50s flight on a 10L tank
+  static const double fuelConsumptionDrill = 0.08; // Cheaper than flying
   static const double lowFuelThreshold = 0.15;
   static const double reducedThrustThreshold = 0.20;
 
   // Hull
-  static const double baseHullHP = 10.0;
+  static const double baseHullHP = 50.0;
   static const double lowHullThreshold = 0.20;
-  static const double lavaDamagePerSecond = 5.0;
-  static const double gasDamagePerSecond = 2.0;
+  static const double lavaDamagePerSecond = 12.0; // ~4s to kill at base hull
+  static const double gasDamagePerSecond = 5.0; // ~10s at base hull
 
   // Cargo
   static const double baseCargoCapacity = 50.0; // kg
@@ -118,17 +118,30 @@ class GameConstants {
   static const double hellAmbientLight = 0.1;
 
   // Particle system
-  static const int drillParticlesMin = 8;
-  static const int drillParticlesMax = 12;
-  static const int oreSparkleParticles = 16;
-  static const int explosionParticlesMin = 40;
-  static const int explosionParticlesMax = 80;
-  static const int lavaSplashParticles = 20;
-  static const int caveDustParticlesMin = 30;
-  static const int caveDustParticlesMax = 50;
+  static const int drillParticlesMin = 4;
+  static const int drillParticlesMax = 6;
+  static const int oreSparkleParticles = 8;
+  static const int explosionParticlesMin = 20;
+  static const int explosionParticlesMax = 40;
+  static const int lavaSplashParticles = 10;
+  static const int caveDustParticlesMin = 15;
+  static const int caveDustParticlesMax = 25;
+
+  // Forge2D collision filter categories (bitmask)
+  // Pod excludes terrain so SdfCollisionSystem is the sole terrain handler.
+  // Debris collides with both terrain and pod normally.
+  static const int collisionCategoryPod = 0x0001;
+  static const int collisionCategoryTerrain = 0x0002;
+  static const int collisionCategoryDebris = 0x0004;
+  static const int collisionMaskPod = 0xFFFF; // everything including terrain
+  static const int collisionMaskTerrain = 0xFFFF; // everything
+  static const int collisionMaskDebris = 0xFFFF; // everything
+
+  // Physics limits
+  static const double podMaxSpeed = 14.0; // m/s — soft-capped via drag force in Pod.update()
 
   // Economy
   static const double startingCash = 0.0;
   static const double reserveFuelAmount = 25.0;
-  static const double nanobotHealAmount = 30.0;
+  static const double nanobotHealAmount = 150.0; // Scaled with 50 base HP
 }

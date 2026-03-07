@@ -4,7 +4,7 @@ import 'dart:ui';
 class OreType {
   final String name;
   final int value; // $ when sold
-  final int weight; // kg, affects pod physics
+  final int weight; // kg, affects robot physics
   final int minDepth; // ft to start spawning
   final Color color; // Rendered fill color
   final Color glowColor; // Subtle radial glow in darkness

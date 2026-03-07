@@ -556,7 +556,7 @@ class _EnginePainter extends CustomPainter {
         text: '${power}K',
         style: TextStyle(
           color: Colors.amber.withValues(alpha: 0.8),
-          fontSize: 9,
+          fontSize: 10,
           fontWeight: FontWeight.bold,
           fontFamily: 'monospace',
         ),
@@ -947,7 +947,7 @@ class _CargoBayPainter extends CustomPainter {
         text: '${cap}kg',
         style: TextStyle(
           color: Colors.white.withValues(alpha: 0.6),
-          fontSize: 9,
+          fontSize: 10,
           fontWeight: FontWeight.bold,
           fontFamily: 'monospace',
         ),
@@ -1097,7 +1097,7 @@ class _DrillVisualWidgetState extends State<DrillVisualWidget>
                     _drillNames[widget.level.clamp(0, _drillNames.length - 1)],
                     style: TextStyle(
                       color: glowColor,
-                      fontSize: 9,
+                      fontSize: 10,
                       fontWeight: FontWeight.bold,
                       fontFamily: 'monospace',
                     ),
@@ -1145,7 +1145,7 @@ void _drawLabel(Canvas canvas, Size size, String text) {
       text: text,
       style: const TextStyle(
         color: Color(0xCCFFBB33),
-        fontSize: 9,
+        fontSize: 10,
         fontWeight: FontWeight.bold,
         fontFamily: 'monospace',
         letterSpacing: 0.5,

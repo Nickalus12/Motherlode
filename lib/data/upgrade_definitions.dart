@@ -104,49 +104,49 @@ class UpgradeDefinitions {
       UpgradeTier(
         name: 'Stock Hull',
         cost: 0,
-        statValue: 10, // max HP
+        statValue: 50, // max HP (base)
         description: 'Thin aluminum shell. Handle with care.',
       ),
       UpgradeTier(
         name: 'Ironium Hull',
         cost: 2000,
-        statValue: 20,
+        statValue: 100,
         description: 'Ironium plating. Twice the protection.',
       ),
       UpgradeTier(
         name: 'Bronzium Hull',
         cost: 5000,
-        statValue: 35,
+        statValue: 175,
         description: 'Bronzium alloy. Resists moderate impacts.',
       ),
       UpgradeTier(
         name: 'Steel Hull',
         cost: 20000,
-        statValue: 55,
+        statValue: 275,
         description: 'Reinforced steel. Built to last.',
       ),
       UpgradeTier(
         name: 'Platinium Hull',
         cost: 75000,
-        statValue: 80,
+        statValue: 400,
         description: 'Platinium composite. Military grade.',
       ),
       UpgradeTier(
         name: 'Einsteinium Hull',
         cost: 300000,
-        statValue: 120,
+        statValue: 600,
         description: 'Einsteinium matrix. Absorbs massive impacts.',
       ),
       UpgradeTier(
         name: 'Energy-Shielded Hull',
         cost: 1500000,
-        statValue: 200,
+        statValue: 1000,
         description: 'Force-field reinforced. Near-indestructible.',
       ),
       UpgradeTier(
         name: 'Regenerative Hull',
         cost: 0, // Requires Ancient Scroll
-        statValue: 300,
+        statValue: 1500,
         description: 'Self-healing nanomaterial. [Ancient Scroll required]',
       ),
     ],
@@ -185,13 +185,13 @@ class UpgradeDefinitions {
         name: 'V8 5.0L',
         cost: 100000,
         statValue: 12000,
-        description: 'Muscle car of mining pods.',
+        description: 'Muscle car of mining robots.',
       ),
       UpgradeTier(
         name: 'V12 6.0L',
         cost: 400000,
         statValue: 16000,
-        description: 'Supercar performance. Lifts fully loaded pod easily.',
+        description: 'Supercar performance. Lifts fully loaded robot easily.',
       ),
       UpgradeTier(
         name: 'V16 Jag',

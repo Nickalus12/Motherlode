@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:flame_forge2d/flame_forge2d.dart' show Vector2;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 
 import 'package:motherlode/data/special_items.dart';
 import 'package:motherlode/motherlode_game.dart';
@@ -31,6 +32,8 @@ class _HudOverlayState extends State<HudOverlay>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _pulseController;
   late final AnimationController _glowController;
+  late final AnimationController _shakeController;
+  late final AnimationController _milestoneSlideController;
   String? _biomeToastText;
   double _biomeToastOpacity = 0;
   String? _milestoneTitle;
@@ -41,6 +44,18 @@ class _HudOverlayState extends State<HudOverlay>
   bool _saving = false;
   bool _surfaceStationOpen = false;
   bool _wasAtSurface = false;
+
+  // Smooth bar transitions (lerp display values toward actual)
+  double _displayFuelRatio = 1.0;
+  double _displayHullRatio = 1.0;
+  double _displayCargoRatio = 0.0;
+
+  // Cash ticker animation
+  double _displayCash = 0.0;
+  double _targetCash = 0.0;
+
+  // Smooth depth scrolling
+  double _displayDepth = 0.0;
 
   @override
   void initState() {
@@ -56,6 +71,19 @@ class _HudOverlayState extends State<HudOverlay>
       duration: const Duration(milliseconds: 1500),
       vsync: this,
     )..repeat(reverse: true);
+
+    _shakeController = AnimationController(
+      duration: const Duration(milliseconds: 80),
+      vsync: this,
+    )..repeat(reverse: true);
+
+    _milestoneSlideController = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+
+    // Tick listener for smooth lerping of display values
+    _glowController.addListener(_lerpDisplayValues);
 
     _setupBiomeListener();
   }
@@ -73,6 +101,31 @@ class _HudOverlayState extends State<HudOverlay>
         }
       }
     }
+  }
+
+  void _lerpDisplayValues() {
+    if (!widget.game.isLoaded) return;
+    const lerpSpeed = 0.13; // ~8x/sec at 60fps (0.13 per frame)
+
+    final actualFuel = widget.game.fuelSystem.fuelRatio;
+    final actualHull = widget.game.hullSystem.hullRatio;
+    final actualCargo = widget.game.pod.cargoSystem.fillRatio;
+    final actualCash = widget.game.playerCash;
+    final actualDepth = widget.game.currentDepthFeet;
+
+    _displayFuelRatio += (actualFuel - _displayFuelRatio) * lerpSpeed;
+    _displayHullRatio += (actualHull - _displayHullRatio) * lerpSpeed;
+    _displayCargoRatio += (actualCargo - _displayCargoRatio) * lerpSpeed;
+    _displayDepth += (actualDepth - _displayDepth) * lerpSpeed;
+
+    // Cash ticker: lerp faster for big changes, slower for small
+    final cashDiff = actualCash - _displayCash;
+    if (cashDiff.abs() < 1) {
+      _displayCash = actualCash;
+    } else {
+      _displayCash += cashDiff * 0.08;
+    }
+    _targetCash = actualCash;
   }
 
   void _setupBiomeListener() {
@@ -106,23 +159,31 @@ class _HudOverlayState extends State<HudOverlay>
     // Award cash bonus
     widget.game.addCash(milestone.cashBonus);
 
-    // Emit celebration particles around the pod
+    // Celebration audio
+    widget.game.audioManager.playOrePickup();
+
+    // Haptic feedback
+    HapticFeedback.heavyImpact();
+
+    // Emit celebration particles around the robot
     widget.game.particleSystem.emitOreSparkle(
       widget.game.pod.position,
       Colors.amber,
     );
 
     // Camera shake for celebration feel
-    widget.game.earthquakeSystem.startShake(0.3, 0.4);
+    widget.game.earthquakeSystem.startShake(0.5, 0.3);
 
-    // Show milestone toast
+    // Show milestone toast with slide-in animation
     setState(() {
       _milestoneTitle = '${milestone.depth.toInt()} FT — ${milestone.name}';
       _milestoneBonus = '+\$${milestone.cashBonus.toInt()}';
       _milestoneOpacity = 1.0;
     });
+    _milestoneSlideController.forward(from: 0);
     Future.delayed(const Duration(seconds: 4), () {
       if (mounted) {
+        _milestoneSlideController.reverse();
         setState(() => _milestoneOpacity = 0);
       }
     });
@@ -317,7 +378,7 @@ class _HudOverlayState extends State<HudOverlay>
     );
   }
 
-  /// Detect when the pod transitions from underground to surface and
+  /// Detect when the robot transitions from underground to surface and
   /// has cargo to sell, fuel to refill, or hull to repair.
   void _checkSurfaceLanding() {
     final atSurface = widget.game.isAtSurface;
@@ -382,6 +443,9 @@ class _HudOverlayState extends State<HudOverlay>
         }
       }
     }
+
+    // Update robot mass after selling cargo
+    game.pod.updateMass();
 
     setState(() => _surfaceStationOpen = false);
   }
@@ -661,8 +725,11 @@ class _HudOverlayState extends State<HudOverlay>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _glowController.removeListener(_lerpDisplayValues);
     _pulseController.dispose();
     _glowController.dispose();
+    _shakeController.dispose();
+    _milestoneSlideController.dispose();
     super.dispose();
   }
 
@@ -705,7 +772,12 @@ class _HudOverlayState extends State<HudOverlay>
     return DefaultTextStyle(
       style: const TextStyle(decoration: TextDecoration.none),
       child: AnimatedBuilder(
-        animation: Listenable.merge([_pulseController, _glowController]),
+        animation: Listenable.merge([
+          _pulseController,
+          _glowController,
+          _shakeController,
+          _milestoneSlideController,
+        ]),
         builder: (context, _) {
           return Stack(
             children: [
@@ -779,7 +851,7 @@ class _HudOverlayState extends State<HudOverlay>
                               color: widget.game.shaderBackground.shaderReady
                                   ? Colors.green
                                   : Colors.red,
-                              fontSize: 8,
+                              fontSize: 10,
                             ),
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
@@ -791,7 +863,7 @@ class _HudOverlayState extends State<HudOverlay>
                                   widget.game.shaderTerrainRenderer.shaderReady
                                       ? Colors.green
                                       : Colors.red,
-                              fontSize: 8,
+                              fontSize: 10,
                             ),
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
@@ -843,23 +915,35 @@ class _HudOverlayState extends State<HudOverlay>
                 child: IgnorePointer(
                   child: Column(
                     children: [
-                      _buildGaugeBar(
-                        label: 'FUEL',
-                        ratio: widget.game.fuelSystem.fuelRatio,
-                        colors: _fuelGradientColors,
-                        icon: Icons.local_gas_station,
-                        width: 32,
-                        height: 130,
+                      // Fuel gauge with shake when critical
+                      Transform.translate(
+                        offset: _displayFuelRatio < 0.20
+                            ? Offset(((_shakeController.value - 0.5) * 4.0), 0)
+                            : Offset.zero,
+                        child: _buildGaugeBar(
+                          label: 'FUEL',
+                          ratio: _displayFuelRatio,
+                          colors: _fuelGradientColors,
+                          icon: Icons.local_gas_station,
+                          width: 32,
+                          height: 130,
+                        ),
                       ),
                       const SizedBox(height: 10),
-                      _buildGaugeBar(
-                        label: 'HULL',
-                        ratio: widget.game.hullSystem.hullRatio,
-                        colors: _hullGradientColors,
-                        icon: Icons.shield,
-                        width: 32,
-                        height: 130,
-                        segmented: true,
+                      // Hull gauge with shake when critical
+                      Transform.translate(
+                        offset: _displayHullRatio < 0.20
+                            ? Offset(((_shakeController.value - 0.5) * 4.0), 0)
+                            : Offset.zero,
+                        child: _buildGaugeBar(
+                          label: 'HULL',
+                          ratio: _displayHullRatio,
+                          colors: _hullGradientColors,
+                          icon: Icons.shield,
+                          width: 32,
+                          height: 130,
+                          segmented: true,
+                        ),
                       ),
                     ],
                   ),
@@ -884,7 +968,7 @@ class _HudOverlayState extends State<HudOverlay>
                 ),
               ),
 
-              // Biome transition toast
+              // Biome transition toast with pulsing glow
               if (_biomeToastText != null)
                 Positioned(
                   top: MediaQuery.of(context).padding.top + 48,
@@ -911,10 +995,23 @@ class _HudOverlayState extends State<HudOverlay>
                             ),
                             border: Border(
                               top: BorderSide(
-                                  color: Colors.amber.withValues(alpha: 0.6)),
+                                  color: Colors.amber.withValues(
+                                      alpha:
+                                          0.4 + 0.4 * _pulseController.value)),
                               bottom: BorderSide(
-                                  color: Colors.amber.withValues(alpha: 0.6)),
+                                  color: Colors.amber.withValues(
+                                      alpha:
+                                          0.4 + 0.4 * _pulseController.value)),
                             ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.amber.withValues(
+                                    alpha:
+                                        0.15 + 0.15 * _pulseController.value),
+                                blurRadius: 20,
+                                spreadRadius: 2,
+                              ),
+                            ],
                           ),
                           child: Text(
                             _biomeToastText!,
@@ -925,8 +1022,10 @@ class _HudOverlayState extends State<HudOverlay>
                               letterSpacing: 4,
                               shadows: [
                                 Shadow(
-                                  color: Colors.amber.withValues(alpha: 0.6),
-                                  blurRadius: 10,
+                                  color: Colors.amber.withValues(
+                                      alpha:
+                                          0.4 + 0.4 * _pulseController.value),
+                                  blurRadius: 10 + 6 * _pulseController.value,
                                 ),
                               ],
                             ),
@@ -937,7 +1036,7 @@ class _HudOverlayState extends State<HudOverlay>
                   ),
                 ),
 
-              // Depth milestone celebration toast
+              // Depth milestone celebration toast with slide-in
               if (_milestoneTitle != null)
                 Positioned(
                   top: MediaQuery.of(context).padding.top + 90,
@@ -947,78 +1046,98 @@ class _HudOverlayState extends State<HudOverlay>
                     child: AnimatedOpacity(
                       opacity: _milestoneOpacity,
                       duration: const Duration(milliseconds: 600),
-                      child: Center(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 28,
-                            vertical: 14,
-                          ),
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.transparent,
-                                Colors.black.withValues(alpha: 0.9),
-                                Colors.black.withValues(alpha: 0.9),
-                                Colors.transparent,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0, -1.5),
+                          end: Offset.zero,
+                        ).animate(CurvedAnimation(
+                          parent: _milestoneSlideController,
+                          curve: Curves.elasticOut,
+                        )),
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 28,
+                              vertical: 14,
+                            ),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.black.withValues(alpha: 0.9),
+                                  Colors.black.withValues(alpha: 0.9),
+                                  Colors.transparent,
+                                ],
+                              ),
+                              border: Border(
+                                top: BorderSide(
+                                    color: Colors.yellowAccent.withValues(
+                                        alpha: 0.6 +
+                                            0.4 * _pulseController.value)),
+                                bottom: BorderSide(
+                                    color: Colors.yellowAccent.withValues(
+                                        alpha: 0.6 +
+                                            0.4 * _pulseController.value)),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.yellowAccent.withValues(
+                                      alpha:
+                                          0.1 + 0.15 * _pulseController.value),
+                                  blurRadius: 24,
+                                  spreadRadius: 2,
+                                ),
                               ],
                             ),
-                            border: Border(
-                              top: BorderSide(
-                                  color: Colors.yellowAccent
-                                      .withValues(alpha: 0.8)),
-                              bottom: BorderSide(
-                                  color: Colors.yellowAccent
-                                      .withValues(alpha: 0.8)),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'DEPTH RECORD',
+                                  style: TextStyle(
+                                    color: Colors.yellowAccent
+                                        .withValues(alpha: 0.7),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 6,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _milestoneTitle!,
+                                  style: TextStyle(
+                                    color: Colors.yellowAccent,
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 3,
+                                    shadows: [
+                                      Shadow(
+                                        color: Colors.yellowAccent
+                                            .withValues(alpha: 0.8),
+                                        blurRadius: 16,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  _milestoneBonus!,
+                                  style: TextStyle(
+                                    color: Colors.greenAccent,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 2,
+                                    shadows: [
+                                      Shadow(
+                                        color: Colors.greenAccent
+                                            .withValues(alpha: 0.6),
+                                        blurRadius: 12,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'DEPTH RECORD',
-                                style: TextStyle(
-                                  color: Colors.yellowAccent
-                                      .withValues(alpha: 0.7),
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w600,
-                                  letterSpacing: 6,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                _milestoneTitle!,
-                                style: TextStyle(
-                                  color: Colors.yellowAccent,
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 3,
-                                  shadows: [
-                                    Shadow(
-                                      color: Colors.yellowAccent
-                                          .withValues(alpha: 0.8),
-                                      blurRadius: 16,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                _milestoneBonus!,
-                                style: TextStyle(
-                                  color: Colors.greenAccent,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 2,
-                                  shadows: [
-                                    Shadow(
-                                      color: Colors.greenAccent
-                                          .withValues(alpha: 0.6),
-                                      blurRadius: 12,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
                           ),
                         ),
                       ),
@@ -1095,7 +1214,7 @@ class _HudOverlayState extends State<HudOverlay>
   }
 
   Widget _buildTopStrip() {
-    final depth = widget.game.currentDepthFeet;
+    final depth = _displayDepth; // smooth scrolling depth
     final safeTop = MediaQuery.of(context).padding.top;
 
     return Container(
@@ -1169,7 +1288,7 @@ class _HudOverlayState extends State<HudOverlay>
                     widget.game.depthSystem.currentBiomeName.toUpperCase(),
                     style: TextStyle(
                       color: _depthBorderColor.withValues(alpha: 0.9),
-                      fontSize: 9,
+                      fontSize: 11,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.5,
                     ),
@@ -1340,7 +1459,7 @@ class _HudOverlayState extends State<HudOverlay>
               label,
               style: TextStyle(
                 color: Colors.white.withValues(alpha: 0.7),
-                fontSize: 9,
+                fontSize: 10,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.5,
               ),
@@ -1453,7 +1572,7 @@ class _HudOverlayState extends State<HudOverlay>
             '${(ratio * 100).toInt()}%',
             style: TextStyle(
               color: isLow ? colors.last : Colors.white.withValues(alpha: 0.7),
-              fontSize: 9,
+              fontSize: 10,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -1463,21 +1582,39 @@ class _HudOverlayState extends State<HudOverlay>
   }
 
   Widget _buildCargoGauge() {
-    final fillRatio = widget.game.pod.cargoSystem.fillRatio;
-    final isFull = fillRatio > 0.9;
+    final fillRatio = _displayCargoRatio;
+    final isFull = fillRatio > 0.95;
+    final isNearFull = fillRatio > 0.80;
+
+    // Color states: cyan normal, amber at 80%+, red when full
+    final Color cargoColor;
+    if (isFull) {
+      cargoColor = Colors.red;
+    } else if (isNearFull) {
+      cargoColor = Colors.amber;
+    } else {
+      cargoColor = Colors.cyan;
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.inventory_2, color: Colors.white54, size: 12),
+            Icon(Icons.inventory_2,
+                color: isNearFull
+                    ? cargoColor.withValues(alpha: 0.7)
+                    : Colors.white54,
+                size: 12),
             const SizedBox(width: 3),
             Text(
               'CARGO',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.7),
-                fontSize: 9,
+                color: isNearFull
+                    ? cargoColor.withValues(alpha: 0.9)
+                    : Colors.white.withValues(alpha: 0.7),
+                fontSize: 10,
                 fontWeight: FontWeight.bold,
                 letterSpacing: 1.5,
               ),
@@ -1489,10 +1626,10 @@ class _HudOverlayState extends State<HudOverlay>
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             boxShadow: [
-              if (isFull)
+              if (isNearFull)
                 BoxShadow(
-                  color: Colors.red
-                      .withValues(alpha: 0.3 + 0.2 * _pulseController.value),
+                  color: cargoColor.withValues(
+                      alpha: 0.3 + 0.2 * _pulseController.value),
                   blurRadius: 12,
                   spreadRadius: 2,
                 ),
@@ -1509,7 +1646,7 @@ class _HudOverlayState extends State<HudOverlay>
             child: CustomPaint(
               painter: _CargoGaugePainter(
                 fillRatio: fillRatio,
-                color: isFull ? Colors.red : Colors.cyan,
+                color: cargoColor,
                 glowIntensity: _glowController.value,
               ),
             ),
@@ -1526,8 +1663,9 @@ class _HudOverlayState extends State<HudOverlay>
             '${widget.game.pod.cargoSystem.currentWeight.toInt()}/'
             '${widget.game.pod.cargoSystem.maxCapacity.toInt()} kg',
             style: TextStyle(
-              color: isFull ? Colors.red : Colors.white.withValues(alpha: 0.6),
-              fontSize: 9,
+              color:
+                  isNearFull ? cargoColor : Colors.white.withValues(alpha: 0.6),
+              fontSize: 10,
               fontWeight: FontWeight.bold,
             ),
           ),
@@ -1537,6 +1675,10 @@ class _HudOverlayState extends State<HudOverlay>
   }
 
   Widget _buildCashDisplay() {
+    // Glow brighter when cash is actively changing (ticker effect)
+    final isTicking = (_displayCash - _targetCash).abs() > 1;
+    final tickGlow = isTicking ? 0.3 : 0.1;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
       decoration: BoxDecoration(
@@ -1548,13 +1690,13 @@ class _HudOverlayState extends State<HudOverlay>
         ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: Colors.amber.withValues(alpha: 0.35),
+          color: Colors.amber.withValues(alpha: isTicking ? 0.6 : 0.35),
           width: 1.5,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.amber.withValues(alpha: 0.1),
-            blurRadius: 8,
+            color: Colors.amber.withValues(alpha: tickGlow),
+            blurRadius: isTicking ? 14 : 8,
             spreadRadius: 0,
           ),
           BoxShadow(
@@ -1574,14 +1716,14 @@ class _HudOverlayState extends State<HudOverlay>
           ),
           const SizedBox(width: 6),
           Text(
-            '\$${_formatCash(widget.game.playerCash)}',
+            '\$${_formatCash(_displayCash)}',
             style: TextStyle(
-              color: Colors.amber,
+              color: isTicking ? Colors.yellowAccent : Colors.amber,
               fontSize: 17,
               fontWeight: FontWeight.bold,
               shadows: [
                 Shadow(
-                  color: Colors.amber.withValues(alpha: 0.4),
+                  color: Colors.amber.withValues(alpha: isTicking ? 0.7 : 0.4),
                   blurRadius: 6,
                 ),
               ],
@@ -1650,6 +1792,10 @@ class _HudOverlayState extends State<HudOverlay>
             Colors.purple, SpecialItems.quantumTeleporter.spritePath),
         _buildConsumableSlot(5, 'M', Icons.star, widget.game.transmitterCount,
             Colors.amber, SpecialItems.matterTransmitter.spritePath),
+        _buildConsumableSlot(6, 'B', Icons.view_column,
+            widget.game.supportBeamCount, Colors.brown, null),
+        _buildConsumableSlot(
+            7, 'G', Icons.flare, widget.game.flareCount, Colors.yellow, null),
       ],
     );
   }
@@ -1893,7 +2039,7 @@ class _CargoGaugePainter extends CustomPainter {
 class _MiniMapWidget extends StatelessWidget {
   final MotherlodeGame game;
   static const double mapSize = 80;
-  static const int sampleRadius = 40; // tiles around pod
+  static const int sampleRadius = 40; // tiles around robot
   static const int sampleStep = 2; // sample every N tiles
 
   const _MiniMapWidget({required this.game});
@@ -1976,7 +2122,7 @@ class _MiniMapPainter extends CustomPainter {
       }
     }
 
-    // Pod dot (center)
+    // Robot dot (center)
     final cx = size.width / 2;
     final cy = size.height / 2;
     paint.color = const Color(0xFFFFFFFF);

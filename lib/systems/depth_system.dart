@@ -14,15 +14,21 @@ class DepthMilestone {
 
 /// All depth milestones in order.
 const depthMilestones = [
+  DepthMilestone(100, 'FIRST DESCENT', 100),
+  DepthMilestone(250, 'GETTING DEEPER', 250),
   DepthMilestone(500, 'SHALLOW DEPTHS', 500),
   DepthMilestone(1000, 'UNDERGROUND', 1500),
+  DepthMilestone(1500, 'MANTLE BREACH', 3000),
   DepthMilestone(2000, 'DEEP EARTH', 5000),
   DepthMilestone(3000, 'THE ABYSS', 15000),
+  DepthMilestone(4000, 'SCORCHED EARTH', 25000),
   DepthMilestone(5000, 'INFERNO', 50000),
   DepthMilestone(7000, 'HELL\'S GATE', 150000),
+  DepthMilestone(7187, 'BOSS ARENA', 250000),
+  DepthMilestone(7500, 'BEDROCK', 500000),
 ];
 
-/// Tracks the pod's depth, triggers biome transitions,
+/// Tracks the robot's depth, triggers biome transitions,
 /// milestone celebrations, and maintains depth records
 class DepthSystem extends Component {
   double currentDepth = 0; // in feet
@@ -40,7 +46,7 @@ class DepthSystem extends Component {
   /// Passes the milestone and cash bonus awarded.
   void Function(DepthMilestone milestone)? onMilestoneReached;
 
-  /// Update depth based on pod's Y position in world units
+  /// Update depth based on robot's Y position in world units
   void updateDepth(double podWorldY) {
     // Convert world Y (tiles) to depth in feet
     // Positive Y = deeper underground
@@ -86,10 +92,10 @@ class DepthSystem extends Component {
   /// Get the biome name for display
   String get currentBiomeName => BiomeRegistry.getBiomeName(currentDepth);
 
-  /// Whether the pod is near the boss zone
+  /// Whether the robot is near the boss zone
   bool get isNearBoss => currentDepth >= GameConstants.bossDepth - 200;
 
-  /// Whether the pod has reached a new depth record
+  /// Whether the robot has reached a new depth record
   bool get isNewDepthRecord => currentDepth >= maxDepthReached - 1;
 
   /// Normalized depth (0.0 at surface, 1.0 at max depth)

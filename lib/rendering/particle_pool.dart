@@ -9,6 +9,11 @@ enum ParticleType {
   lava,
   explosion,
   dust,
+  fire,
+  smoke,
+  spark,
+  ambient,
+  splash,
 }
 
 /// Pooled particle with mutable fields — no allocations after init
@@ -41,7 +46,7 @@ class PooledParticle {
 /// Pre-allocated particle pool with round-robin acquisition.
 /// Zero heap allocation after initialization.
 class ParticlePool {
-  static const int poolSize = 1200;
+  static const int poolSize = 600;
 
   final List<PooledParticle> _particles =
       List.generate(poolSize, (_) => PooledParticle());
@@ -83,12 +88,16 @@ class ParticlePool {
     return particle;
   }
 
-  /// Get all currently active particles (creates a filtered view)
-  Iterable<PooledParticle> get activeParticles =>
-      _particles.where((p) => p.active);
+  /// Cached list of active particles, rebuilt each update() to avoid
+  /// creating a new filtered iterable every render frame.
+  final List<PooledParticle> _activeList = [];
 
-  /// Update all active particles each frame
+  /// Get all currently active particles (cached from last update)
+  List<PooledParticle> get activeParticles => _activeList;
+
+  /// Update all active particles each frame and rebuild active list cache.
   void update(double dt) {
+    _activeList.clear();
     for (final p in _particles) {
       if (!p.active) continue;
       p.age += dt;
@@ -104,9 +113,15 @@ class ParticlePool {
       if (p.type == ParticleType.dirt ||
           p.type == ParticleType.debris ||
           p.type == ParticleType.lava ||
-          p.type == ParticleType.explosion) {
+          p.type == ParticleType.explosion ||
+          p.type == ParticleType.spark ||
+          p.type == ParticleType.splash) {
         p.vy += 980 * dt; // pixel gravity
+      } else if (p.type == ParticleType.fire || p.type == ParticleType.smoke) {
+        p.vy -= 200 * dt; // float upward
       }
+
+      _activeList.add(p);
     }
   }
 

@@ -4,7 +4,6 @@ import 'package:flame/components.dart';
 
 import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/physics/collapse_detector.dart';
-import 'package:motherlode/physics/debris_body.dart';
 import 'package:motherlode/physics/explosion_system.dart';
 
 /// Manages earthquakes, cave collapses, and explosion effects
@@ -31,6 +30,7 @@ class EarthquakeSystem extends Component with HasGameReference<MotherlodeGame> {
 
   // Drill vibration state
   bool _isDrillVibrating = false;
+  double _drillVibrationIntensity = 0;
 
   EarthquakeSystem({required MotherlodeGame game}) : _game = game;
 
@@ -61,10 +61,11 @@ class EarthquakeSystem extends Component with HasGameReference<MotherlodeGame> {
       _explosionFlash = (_explosionFlash - dt * 4.0).clamp(0.0, 1.0);
     }
 
-    // Drill vibration (subtle, high-frequency)
+    // Drill vibration scales with progress (subtle at start, strong near completion)
     if (_isDrillVibrating && !_shaking) {
-      final vx = (_random.nextDouble() - 0.5) * 0.04;
-      final vy = (_random.nextDouble() - 0.5) * 0.04;
+      final scale = 0.02 + _drillVibrationIntensity * 0.06;
+      final vx = (_random.nextDouble() - 0.5) * scale;
+      final vy = (_random.nextDouble() - 0.5) * scale;
       _game.camera.viewfinder.position += Vector2(vx, vy);
     }
     _isDrillVibrating = false; // Reset each frame; DrillSystem sets it
@@ -99,24 +100,62 @@ class EarthquakeSystem extends Component with HasGameReference<MotherlodeGame> {
     _explosionSystem.explode(position, radius, force);
   }
 
-  /// Process a list of cells that should collapse
+  /// Stagger interval between debris spawns for cascade visual effect (seconds).
+  static const double _cascadeStaggerInterval = 0.02; // 20ms per cell
+
+  /// Cavity width threshold to trigger extra screen shake.
+  static const int _largeCavityThreshold = 4;
+
+  /// Process a list of cells that should collapse.
+  /// Cells are pre-sorted by distance for staggered cascade spawning.
   void _processCollapse(List<CollapseCell> cells) {
-    for (final cell in cells) {
-      // Remove the terrain cell
-      _game.removeTerrainCell(cell.gridX, cell.gridY);
+    if (cells.isEmpty) return;
 
-      // Create debris body
-      final debris = DebrisBody(
-        initialPosition: Vector2(
-          cell.gridX.toDouble(),
-          cell.gridY.toDouble(),
-        ),
-        color: cell.color,
-        mass: cell.density * 100,
-      );
-
-      _game.world.add(debris);
+    // Large cavity detection: if horizontal span is wide, add screen shake
+    if (cells.length >= _largeCavityThreshold) {
+      int minX = cells.first.gridX, maxX = cells.first.gridX;
+      for (final c in cells) {
+        if (c.gridX < minX) minX = c.gridX;
+        if (c.gridX > maxX) maxX = c.gridX;
+      }
+      final width = maxX - minX + 1;
+      if (width > _largeCavityThreshold) {
+        final intensity = (width / 10.0).clamp(0.3, 0.8);
+        startShake(intensity, 0.4 + width * 0.05);
+      }
     }
+
+    // Spawn debris with staggered delay based on distance from center
+    for (int i = 0; i < cells.length; i++) {
+      final cell = cells[i];
+      final delay = i * _cascadeStaggerInterval;
+
+      if (delay <= 0) {
+        _spawnDebris(cell);
+      } else {
+        Future.delayed(Duration(milliseconds: (delay * 1000).round()), () {
+          if (_game.isGameOver) return;
+          _spawnDebris(cell);
+        });
+      }
+    }
+  }
+
+  /// Spawn a single debris body from a collapse cell.
+  void _spawnDebris(CollapseCell cell) {
+    _game.removeTerrainCell(cell.gridX, cell.gridY);
+
+    final debris = _game.debrisManager.createDebris(
+      position: Vector2(
+        cell.gridX.toDouble(),
+        cell.gridY.toDouble(),
+      ),
+      color: cell.color,
+      mass: cell.mass,
+      halfSize: cell.halfSize,
+    );
+
+    _game.world.add(debris);
   }
 
   void _triggerRandomEarthquake() {
@@ -134,7 +173,7 @@ class EarthquakeSystem extends Component with HasGameReference<MotherlodeGame> {
     final podY = _game.pod.position.y.round();
     final radius = 3 + _random.nextInt(5);
 
-    // Random force to pod
+    // Random force to robot
     _game.pod.applyImpulse(Vector2(
       (_random.nextDouble() - 0.5) * intensity * 50,
       (_random.nextDouble() - 0.5) * intensity * 30,
@@ -185,8 +224,10 @@ class EarthquakeSystem extends Component with HasGameReference<MotherlodeGame> {
 
   /// Signal that the drill is actively cutting this frame.
   /// Call every frame during drilling for continuous vibration.
-  void setDrillVibrating() {
+  /// [intensity] is 0.0-1.0 drill progress for scaling vibration strength.
+  void setDrillVibrating({double intensity = 0}) {
     _isDrillVibrating = true;
+    _drillVibrationIntensity = intensity;
   }
 
   /// Whether an earthquake is currently happening

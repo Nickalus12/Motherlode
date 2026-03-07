@@ -110,7 +110,7 @@ class CreatureSpawner extends Component with HasGameReference<MotherlodeGame> {
         final worldY = (chunk.chunkY * size + y).toDouble();
         final spawnPos = Vector2(worldX, worldY);
 
-        // Don't spawn too close to the pod
+        // Don't spawn too close to the robot
         if (spawnPos.distanceTo(podPos) < minSpawnDistance) continue;
 
         // Check creature cap

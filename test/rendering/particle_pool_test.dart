@@ -124,4 +124,135 @@ void main() {
     expect(p.vy, closeTo(5.0, 0.01),
         reason: 'Exhaust particle should not be affected by gravity');
   });
+
+  // 8. PooledParticle.lifeRatio edge cases
+  test('8. lifeRatio clamps and handles edge cases', () {
+    final p = PooledParticle();
+
+    // Fresh particle
+    p.lifetime = 1.0;
+    p.age = 0.0;
+    expect(p.lifeRatio, 1.0);
+
+    // Half-life
+    p.age = 0.5;
+    expect(p.lifeRatio, closeTo(0.5, 0.001));
+
+    // Expired
+    p.age = 2.0;
+    expect(p.lifeRatio, 0.0);
+
+    // Zero lifetime
+    p.lifetime = 0.0;
+    p.age = 0.0;
+    expect(p.lifeRatio, 0.0);
+  });
+
+  // 9. Reset clears mutable state
+  test('9. PooledParticle reset clears state', () {
+    final p = PooledParticle();
+    p.age = 5.0;
+    p.active = true;
+    p.rotation = 3.14;
+    p.angularVelocity = 2.0;
+    p.reset();
+    expect(p.age, 0.0);
+    expect(p.active, isFalse);
+    expect(p.rotation, 0.0);
+    expect(p.angularVelocity, 0.0);
+  });
+
+  // 10. Angular velocity updates rotation
+  test('10. Angular velocity updates rotation', () {
+    final pool = ParticlePool();
+    final p = pool.acquire();
+    p.lifetime = 5.0;
+    p.angularVelocity = 3.14;
+    p.rotation = 0.0;
+    p.type = ParticleType.exhaust; // No gravity interference
+
+    pool.update(1.0);
+    expect(p.rotation, closeTo(3.14, 0.01));
+  });
+
+  // 11. Lava and explosion particles get gravity
+  test('11. Lava and explosion particles have gravity', () {
+    final pool = ParticlePool();
+
+    final lava = pool.acquire();
+    lava.lifetime = 5.0;
+    lava.type = ParticleType.lava;
+    lava.vy = 0;
+
+    final explosion = pool.acquire();
+    explosion.lifetime = 5.0;
+    explosion.type = ParticleType.explosion;
+    explosion.vy = 0;
+
+    pool.update(0.1);
+    expect(lava.vy, greaterThan(0));
+    expect(explosion.vy, greaterThan(0));
+  });
+
+  // 12. Dust and ore particles do NOT get gravity
+  test('12. Dust and ore particles have no gravity', () {
+    final pool = ParticlePool();
+
+    final dust = pool.acquire();
+    dust.lifetime = 5.0;
+    dust.type = ParticleType.dust;
+    dust.vy = 0;
+
+    final ore = pool.acquire();
+    ore.lifetime = 5.0;
+    ore.type = ParticleType.ore;
+    ore.vy = 0;
+
+    pool.update(0.1);
+    expect(dust.vy, 0.0);
+    expect(ore.vy, 0.0);
+  });
+
+  // 13. Acquire prefers dead particles over shortest-remaining
+  test('13. Acquire prefers dead particles over recycling', () {
+    final pool = ParticlePool();
+
+    // Acquire two particles
+    final p1 = pool.acquire();
+    p1.lifetime = 0.05;
+    final p2 = pool.acquire();
+    p2.lifetime = 10.0;
+
+    // Kill p1
+    pool.update(0.1);
+    expect(p1.active, isFalse);
+    expect(p2.active, isTrue);
+    expect(pool.activeCount, 1);
+
+    // Next acquire should reuse dead p1, not recycle living p2
+    final p3 = pool.acquire();
+    expect(p3.active, isTrue);
+    expect(pool.activeCount, 2);
+  });
+
+  // 14. ParticleType enum completeness
+  test('14. All expected ParticleType values exist', () {
+    expect(ParticleType.values.length, 12);
+    expect(
+        ParticleType.values,
+        containsAll([
+          ParticleType.dirt,
+          ParticleType.debris,
+          ParticleType.ore,
+          ParticleType.exhaust,
+          ParticleType.lava,
+          ParticleType.explosion,
+          ParticleType.dust,
+          ParticleType.fire,
+          ParticleType.smoke,
+          ParticleType.spark,
+          ParticleType.ambient,
+          ParticleType.splash,
+        ]));
+  });
 }

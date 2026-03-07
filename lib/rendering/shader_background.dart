@@ -22,6 +22,10 @@ class ShaderBackground extends Component with HasGameReference<MotherlodeGame> {
   /// Whether the GPU shader compiled successfully.
   bool get shaderReady => _shaderReady;
 
+  /// Render behind everything else (matches ParallaxBackground CPU fallback).
+  @override
+  int get priority => -10;
+
   @override
   Future<void> onLoad() async {
     await super.onLoad();
@@ -51,14 +55,20 @@ class ShaderBackground extends Component with HasGameReference<MotherlodeGame> {
     _time += dt;
   }
 
+  // Pre-allocated Paint to avoid per-frame allocation
+  final ui.Paint _bgPaint = ui.Paint();
+
   @override
   void render(ui.Canvas canvas) {
     if (!_shaderReady || _shader == null) return;
+    // Guard: robot must be mounted before we can read its position
+    if (!game.pod.isMounted) return;
 
     final shader = _shader!;
     final viewport = game.camera.visibleWorldRect;
     final viewWidth = viewport.width;
     final viewHeight = viewport.height;
+    if (viewWidth <= 0 || viewHeight <= 0) return;
     final cameraX = viewport.left + viewWidth / 2;
     final cameraY = viewport.top + viewHeight / 2;
     final depthFeet = game.currentDepthFeet;
@@ -71,7 +81,8 @@ class ShaderBackground extends Component with HasGameReference<MotherlodeGame> {
                 GameConstants.pixelsPerMeter;
 
     // Set float uniforms by index:
-    // 0,1: uSize (vec2) — viewport size in world units
+    // 0,1: uSize (vec2) — drawn rect dimensions (world units, matching
+    //       FlutterFragCoord() range for the drawRect call below)
     shader.setFloat(0, viewWidth);
     shader.setFloat(1, viewHeight);
     // 2,3: uCameraPos (vec2) — camera center in world tiles
@@ -87,11 +98,16 @@ class ShaderBackground extends Component with HasGameReference<MotherlodeGame> {
     // 8: uPodLightRadius
     shader.setFloat(8, lightRadius);
 
-    // Draw fullscreen quad covering the visible world rect
+    // Draw fullscreen quad covering the visible world rect.
+    // Use translate + origin-based rect so FlutterFragCoord() starts at (0,0).
+    canvas.save();
+    canvas.translate(viewport.left, viewport.top);
+    _bgPaint.shader = shader;
     canvas.drawRect(
-      ui.Rect.fromLTWH(viewport.left, viewport.top, viewWidth, viewHeight),
-      ui.Paint()..shader = shader,
+      ui.Rect.fromLTWH(0, 0, viewWidth, viewHeight),
+      _bgPaint,
     );
+    canvas.restore();
   }
 
   @override

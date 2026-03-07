@@ -75,6 +75,22 @@ class SpecialItems {
     spritePath: 'items/consumables/transmitter.png',
   );
 
+  static const ConsumableItem supportBeam = ConsumableItem(
+    name: 'Support Beam',
+    description: 'Reinforce 3 cells above. Prevents tunnel collapse.',
+    cost: 1500,
+    hotkey: 'B',
+    icon: '🏗',
+  );
+
+  static const ConsumableItem flare = ConsumableItem(
+    name: 'Flare',
+    description: 'Reveals terrain in a 10-tile radius for 15 seconds.',
+    cost: 500,
+    hotkey: 'G',
+    icon: '🔦',
+  );
+
   static const List<ConsumableItem> allConsumables = [
     reserveFuelTank,
     hullRepairNanobots,
@@ -82,6 +98,8 @@ class SpecialItems {
     plasticExplosive,
     quantumTeleporter,
     matterTransmitter,
+    supportBeam,
+    flare,
   ];
 
   /// Get a consumable by name

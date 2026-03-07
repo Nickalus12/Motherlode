@@ -7,7 +7,7 @@ const int saveFormatVersion = 1;
 ///
 /// Captures all state needed to save and restore a game session:
 /// - Player stats (cash, upgrade levels, consumable counts)
-/// - Pod state (position, fuel, hull, cargo)
+/// - Robot state (position, fuel, hull, cargo)
 /// - World seed (for regeneration)
 /// - Modified chunk terrain data
 /// - Depth records
@@ -34,6 +34,8 @@ class GameState {
   int nanobotCount;
   int teleporterCount;
   int transmitterCount;
+  int supportBeamCount;
+  int flareCount;
 
   // Pod state
   double podX;
@@ -50,6 +52,12 @@ class GameState {
   int totalCellsDrilled;
   int ancientScrollCount;
   List<double> reachedMilestones;
+
+  // Market system
+  Map<String, dynamic> marketState;
+
+  // Deployable system (placed beams, etc.)
+  Map<String, dynamic> deployableState;
 
   // NG+ tracking
   int ngPlusLevel;
@@ -77,6 +85,8 @@ class GameState {
     this.nanobotCount = 0,
     this.teleporterCount = 0,
     this.transmitterCount = 0,
+    this.supportBeamCount = 0,
+    this.flareCount = 0,
     this.podX = 0,
     this.podY = -2,
     this.fuel = 10,
@@ -90,12 +100,16 @@ class GameState {
     this.totalCellsDrilled = 0,
     this.ancientScrollCount = 0,
     List<double>? reachedMilestones,
+    Map<String, dynamic>? marketState,
+    Map<String, dynamic>? deployableState,
     this.ngPlusLevel = 0,
     DateTime? savedAt,
     this.playTime = Duration.zero,
   })  : cargoInventory = cargoInventory ?? {},
         modifiedChunks = modifiedChunks ?? {},
         reachedMilestones = reachedMilestones ?? [],
+        marketState = marketState ?? {},
+        deployableState = deployableState ?? {},
         savedAt = savedAt ?? DateTime.now();
 
   /// Serialize to JSON-compatible map
@@ -116,6 +130,8 @@ class GameState {
       'nanobotCount': nanobotCount,
       'teleporterCount': teleporterCount,
       'transmitterCount': transmitterCount,
+      'supportBeamCount': supportBeamCount,
+      'flareCount': flareCount,
       'podX': podX,
       'podY': podY,
       'fuel': fuel,
@@ -128,6 +144,8 @@ class GameState {
       'totalCellsDrilled': totalCellsDrilled,
       'ancientScrollCount': ancientScrollCount,
       'reachedMilestones': reachedMilestones,
+      'marketState': marketState,
+      'deployableState': deployableState,
       'ngPlusLevel': ngPlusLevel,
       'savedAt': savedAt.toIso8601String(),
       'playTimeMs': playTime.inMilliseconds,
@@ -185,6 +203,8 @@ class GameState {
       nanobotCount: map['nanobotCount'] as int? ?? 0,
       teleporterCount: map['teleporterCount'] as int? ?? 0,
       transmitterCount: map['transmitterCount'] as int? ?? 0,
+      supportBeamCount: map['supportBeamCount'] as int? ?? 0,
+      flareCount: map['flareCount'] as int? ?? 0,
       podX: (map['podX'] as num?)?.toDouble() ?? 0,
       podY: (map['podY'] as num?)?.toDouble() ?? -2,
       fuel: (map['fuel'] as num?)?.toDouble() ?? 10,
@@ -206,6 +226,8 @@ class GameState {
               ?.map((v) => (v as num).toDouble())
               .toList() ??
           [],
+      marketState: (map['marketState'] as Map<String, dynamic>?) ?? {},
+      deployableState: (map['deployableState'] as Map<String, dynamic>?) ?? {},
       ngPlusLevel: map['ngPlusLevel'] as int? ?? 0,
       savedAt: map['savedAt'] != null
           ? DateTime.parse(map['savedAt'] as String)
@@ -237,6 +259,8 @@ class GameState {
       nanobotCount: nanobotCount,
       teleporterCount: teleporterCount,
       transmitterCount: transmitterCount,
+      supportBeamCount: supportBeamCount,
+      flareCount: flareCount,
       podX: podX,
       podY: podY,
       fuel: fuel,
@@ -250,6 +274,8 @@ class GameState {
       totalCellsDrilled: totalCellsDrilled,
       ancientScrollCount: ancientScrollCount,
       reachedMilestones: List.from(reachedMilestones),
+      marketState: Map.from(marketState),
+      deployableState: Map.from(deployableState),
       ngPlusLevel: ngPlusLevel,
       savedAt: savedAt,
       playTime: playTime,

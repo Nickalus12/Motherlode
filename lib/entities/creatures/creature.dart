@@ -25,10 +25,13 @@ enum CreatureState {
 /// - Health points, damage value, speed stat
 /// - Eye glow component (point light)
 /// - Death particle burst + cash drop
+/// - Attack cooldown (lunge-pause-lunge pattern)
+/// - Damage invulnerability flash (0.2s)
+/// - Flee behavior when health < 30%
 abstract class Creature extends BodyComponent with ContactCallbacks {
   final String name;
   final double maxHealth;
-  final double damage; // Damage dealt to pod per second on contact
+  final double damage; // Damage dealt to robot per attack lunge
   final double speed;
   final Color bodyColor;
   final Color eyeColor;
@@ -41,6 +44,22 @@ abstract class Creature extends BodyComponent with ContactCallbacks {
   double _stateTimer = 0;
   double _wanderAngle = 0;
 
+  // Attack cooldown: lunge-pause-lunge pattern
+  double _attackCooldown = 0;
+  static const double _attackLungeDuration = 0.3;
+  static const double _attackPauseDuration = 1.0;
+  bool _isLunging = false;
+
+  // Damage invulnerability flash (protected for subclass render access)
+  double invulnTimer = 0;
+  static const double _invulnerabilityDuration = 0.2;
+
+  /// Detection radius in world units. Override per creature type.
+  double get detectionRadius =>
+      GameConstants.creatureChaseRange / GameConstants.pixelsPerMeter;
+
+  final Vector2 initialPosition;
+
   Creature({
     required this.name,
     required this.maxHealth,
@@ -49,7 +68,7 @@ abstract class Creature extends BodyComponent with ContactCallbacks {
     required this.bodyColor,
     required this.eyeColor,
     required this.cashDrop,
-    required Vector2 initialPosition,
+    required this.initialPosition,
   }) : health = maxHealth;
 
   /// Creature-specific body shape creation
@@ -58,11 +77,18 @@ abstract class Creature extends BodyComponent with ContactCallbacks {
   /// Creature dimensions for rendering
   double get bodyRadius => 0.5;
 
+  /// Whether this creature is currently invulnerable after taking damage
+  bool get isInvulnerable => invulnTimer > 0;
+
+  /// Health ratio (0.0 to 1.0)
+  double get healthRatio =>
+      maxHealth > 0 ? (health / maxHealth).clamp(0.0, 1.0) : 0.0;
+
   @override
   Body createBody() {
     final bodyDef = BodyDef(
       type: BodyType.dynamic,
-      position: position,
+      position: initialPosition,
       linearDamping: 2.0,
       angularDamping: 5.0,
       fixedRotation: true,
@@ -87,7 +113,17 @@ abstract class Creature extends BodyComponent with ContactCallbacks {
 
     _stateTimer += dt;
 
-    // Get pod reference for AI
+    // Tick invulnerability
+    if (invulnTimer > 0) {
+      invulnTimer = (invulnTimer - dt).clamp(0.0, double.infinity);
+    }
+
+    // Tick attack cooldown
+    if (_attackCooldown > 0) {
+      _attackCooldown = (_attackCooldown - dt).clamp(0.0, double.infinity);
+    }
+
+    // Get robot reference for AI
     final pod = motherlodeGame.pod;
     final distToPod = position.distanceTo(pod.position);
 
@@ -132,29 +168,38 @@ abstract class Creature extends BodyComponent with ContactCallbacks {
         break;
 
       case CreatureState.chase:
+        // Flee overrides chase when health is critical
+        if (shouldFlee(pod, distToPod)) {
+          state = CreatureState.flee;
+          _stateTimer = 0;
+          break;
+        }
         if (distToPod < bodyRadius + 1.5) {
           state = CreatureState.attack;
           _stateTimer = 0;
         }
-        if (distToPod >
-            GameConstants.creatureChaseRange *
-                1.5 /
-                GameConstants.pixelsPerMeter) {
+        if (distToPod > detectionRadius * 1.5) {
           state = CreatureState.wander;
           _stateTimer = 0;
         }
         break;
 
       case CreatureState.attack:
+        // Flee if health critical even during attack
+        if (shouldFlee(pod, distToPod)) {
+          state = CreatureState.flee;
+          _stateTimer = 0;
+          break;
+        }
         if (distToPod > bodyRadius + 2.0) {
           state = CreatureState.chase;
           _stateTimer = 0;
         }
-        onAttack(pod, dt);
+        _handleAttack(pod, dt);
         break;
 
       case CreatureState.flee:
-        if (_stateTimer > 3.0) {
+        if (_stateTimer > 3.0 && healthRatio > 0.3) {
           state = CreatureState.wander;
           _stateTimer = 0;
         }
@@ -162,6 +207,24 @@ abstract class Creature extends BodyComponent with ContactCallbacks {
 
       case CreatureState.dead:
         break;
+    }
+  }
+
+  /// Lunge-pause-lunge attack pattern instead of continuous DPS
+  void _handleAttack(Pod pod, double dt) {
+    if (_attackCooldown > 0) return; // Pausing between lunges
+
+    if (!_isLunging) {
+      // Start a lunge
+      _isLunging = true;
+      _stateTimer = 0;
+      onAttackLunge(pod);
+    }
+
+    if (_isLunging && _stateTimer >= _attackLungeDuration) {
+      // Lunge complete, start pause
+      _isLunging = false;
+      _attackCooldown = _attackPauseDuration;
     }
   }
 
@@ -192,9 +255,14 @@ abstract class Creature extends BodyComponent with ContactCallbacks {
         break;
 
       case CreatureState.attack:
-        // Move toward pod slowly while attacking
-        final direction = (pod.position - position).normalized();
-        body.applyForce(direction * speed * 0.3);
+        if (_isLunging) {
+          // Lunge toward robot
+          final direction = (pod.position - position).normalized();
+          body.applyForce(direction * speed * 1.5);
+        } else {
+          // Pause: slow drift
+          body.linearVelocity *= 0.9;
+        }
         break;
 
       case CreatureState.dead:
@@ -202,25 +270,36 @@ abstract class Creature extends BodyComponent with ContactCallbacks {
     }
   }
 
-  /// Whether this creature should chase the pod
+  /// Whether this creature should chase the robot
   bool shouldChase(double distToPod) {
-    return distToPod <
-        GameConstants.creatureChaseRange / GameConstants.pixelsPerMeter;
+    return distToPod < detectionRadius;
   }
 
-  /// Whether this creature should flee from the pod
+  /// Whether this creature should flee from the robot.
+  /// Default: flee when health drops below 30%.
   bool shouldFlee(Pod pod, double distToPod) {
-    return false; // Override in subclasses
+    return healthRatio < 0.3 && distToPod < detectionRadius;
   }
 
-  /// Called each frame while in attack state
+  /// Called once at the start of each attack lunge.
+  /// Override for custom attack behavior.
+  void onAttackLunge(Pod pod) {
+    pod.takeDamage(damage);
+  }
+
+  /// Legacy continuous attack — still available for subclasses that need it
   void onAttack(Pod pod, double dt) {
-    pod.takeDamage(damage * dt);
+    // Default does nothing; lunge pattern is used instead
   }
 
-  /// Take damage from the pod or explosions
+  /// Take damage from the robot or explosions.
+  /// Respects invulnerability window.
   void takeDamageFromSource(double amount) {
+    if (invulnTimer > 0) return; // Invulnerable
+
     health -= amount;
+    invulnTimer = _invulnerabilityDuration;
+
     if (health <= 0) {
       die();
     }
@@ -238,13 +317,19 @@ abstract class Creature extends BodyComponent with ContactCallbacks {
 
     // Remove from world after short delay
     Future.delayed(const Duration(milliseconds: 500), () {
-      removeFromParent();
+      if (isMounted) removeFromParent();
     });
   }
 
   @override
   void render(Canvas canvas) {
     if (state == CreatureState.dead) return;
+
+    // Invulnerability flash: skip rendering every other frame for flash effect
+    if (invulnTimer > 0) {
+      final flashOn = ((invulnTimer * 30).toInt() % 2 == 0);
+      if (!flashOn) return; // Skip this frame for blink effect
+    }
 
     // Draw body
     _renderBody(canvas);

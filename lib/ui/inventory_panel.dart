@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
-import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/entities/pod/cargo_system.dart';
+import 'package:motherlode/motherlode_game.dart';
 
 /// Ore inventory listing with sell all functionality
 class InventoryPanel extends StatefulWidget {
   final MotherlodeGame game;
+  final VoidCallback? onSold;
 
-  const InventoryPanel({super.key, required this.game});
+  const InventoryPanel({super.key, required this.game, this.onSold});
 
   @override
   State<InventoryPanel> createState() => _InventoryPanelState();
@@ -103,8 +104,8 @@ class _InventoryPanelState extends State<InventoryPanel> {
                 ),
                 Container(width: 1, height: 30, color: _borderColor),
                 _buildSummaryItem(
-                  'Total Value',
-                  '\$${_formatCash(cargo.totalValue)}',
+                  'Market Value',
+                  '\$${_formatCash(_marketTotalValue())}',
                   Colors.amber,
                   Icons.monetization_on,
                 ),
@@ -215,7 +216,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
           label,
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.4),
-            fontSize: 9,
+            fontSize: 10,
             letterSpacing: 0.5,
           ),
         ),
@@ -232,8 +233,19 @@ class _InventoryPanelState extends State<InventoryPanel> {
     );
   }
 
+  /// Calculate total market-adjusted value of all cargo.
+  double _marketTotalValue() {
+    final market = widget.game.marketSystem;
+    final items = widget.game.pod.cargoSystem.getCargoBreakdown();
+    double total = 0;
+    for (final item in items) {
+      total += market.calculateSaleValue(item.ore, item.count);
+    }
+    return total;
+  }
+
   Future<void> _confirmSellAll(BuildContext context, CargoSystem cargo) async {
-    final totalValue = cargo.totalValue;
+    final totalValue = _marketTotalValue();
     final itemCount = cargo.getCargoBreakdown().length;
     final confirmed = await showDialog<bool>(
       context: context,
@@ -263,12 +275,20 @@ class _InventoryPanelState extends State<InventoryPanel> {
     if (confirmed == true) {
       setState(() {
         _lastSaleValue = totalValue;
-        final saleValue = cargo.sellAll();
+        final market = widget.game.marketSystem;
+        // Calculate market-adjusted value per ore and record sales
+        double saleValue = 0;
+        for (final item in cargo.getCargoBreakdown()) {
+          saleValue += market.calculateSaleValue(item.ore, item.count);
+          market.recordSale(item.ore.name, item.count);
+        }
+        cargo.sellAll(); // Clear cargo
         widget.game.addCash(saleValue);
         widget.game.pod.updateMass();
         widget.game.audioManager.playSell();
         _justSold = true;
       });
+      widget.onSold?.call();
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted) setState(() => _justSold = false);
       });
@@ -276,6 +296,8 @@ class _InventoryPanelState extends State<InventoryPanel> {
   }
 
   void _sellSingleOre(BuildContext context, CargoItem item) async {
+    final market = widget.game.marketSystem;
+    final marketValue = market.calculateSaleValue(item.ore, item.count);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -283,7 +305,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
         title: Text('Sell ${item.ore.name}?',
             style: const TextStyle(color: Colors.white)),
         content: Text(
-          'Sell ${item.count}x ${item.ore.name} for \$${_formatCash(item.totalValue)}?',
+          'Sell ${item.count}x ${item.ore.name} for \$${_formatCash(marketValue)}?',
           style: const TextStyle(color: Colors.white70),
         ),
         actions: [
@@ -303,11 +325,13 @@ class _InventoryPanelState extends State<InventoryPanel> {
     );
     if (confirmed == true) {
       setState(() {
-        final saleValue = widget.game.pod.cargoSystem.sellOre(item.ore.name);
-        widget.game.addCash(saleValue);
+        widget.game.pod.cargoSystem.sellOre(item.ore.name);
+        market.recordSale(item.ore.name, item.count);
+        widget.game.addCash(marketValue);
         widget.game.pod.updateMass();
         widget.game.audioManager.playSell();
       });
+      widget.onSold?.call();
     }
   }
 
@@ -404,12 +428,12 @@ class _InventoryPanelState extends State<InventoryPanel> {
             ),
           ),
 
-          // Value
+          // Value with market multiplier
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Text(
-                '\$${_formatCash(item.totalValue)}',
+                '\$${_formatCash(widget.game.marketSystem.calculateSaleValue(item.ore, item.count))}',
                 style: TextStyle(
                   color: Colors.amber,
                   fontSize: 14,
@@ -422,13 +446,7 @@ class _InventoryPanelState extends State<InventoryPanel> {
                   ],
                 ),
               ),
-              Text(
-                '\$${item.ore.value}/ea',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.3),
-                  fontSize: 10,
-                ),
-              ),
+              _buildMultiplierLabel(item),
             ],
           ),
           const SizedBox(width: 8),
@@ -454,6 +472,37 @@ class _InventoryPanelState extends State<InventoryPanel> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildMultiplierLabel(CargoItem item) {
+    final market = widget.game.marketSystem;
+    final mult = market.getMultiplier(item.ore.name);
+    final isBoom = market.isBoomActive(item.ore.name);
+    final hasCombo = market.hasComboBonus(item.count);
+
+    final Color color;
+    if (isBoom) {
+      color = Colors.orangeAccent;
+    } else if (mult > 1.0) {
+      color = Colors.greenAccent;
+    } else if (mult < 1.0) {
+      color = Colors.redAccent;
+    } else {
+      color = Colors.white.withValues(alpha: 0.3);
+    }
+
+    final label = StringBuffer('${mult.toStringAsFixed(2)}x');
+    if (isBoom) label.write(' BOOM');
+    if (hasCombo) label.write(' +15%');
+
+    return Text(
+      label.toString(),
+      style: TextStyle(
+        color: color,
+        fontSize: 10,
+        fontWeight: isBoom ? FontWeight.bold : FontWeight.normal,
       ),
     );
   }

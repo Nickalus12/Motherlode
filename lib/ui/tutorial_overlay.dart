@@ -48,7 +48,7 @@ class _TutorialOverlayState extends State<TutorialOverlay>
       icon: Icons.swipe,
       title: 'DRAG TO MOVE',
       description:
-          'Drag anywhere to fly your pod.\nDrag down into terrain to drill.',
+          'Drag anywhere to fly your robot.\nDrag down into terrain to drill.',
     ),
     _TutorialTip(
       icon: Icons.local_gas_station,
@@ -60,7 +60,7 @@ class _TutorialOverlayState extends State<TutorialOverlay>
       icon: Icons.store,
       title: 'SELL & UPGRADE',
       description:
-          'Land on the surface pad to open the shop.\nSell ores and upgrade your pod.',
+          'Land on the surface pad to open the shop.\nSell ores and upgrade your robot.',
     ),
   ];
 

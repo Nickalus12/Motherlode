@@ -94,7 +94,7 @@ class NatasBoss extends Creature {
 
   /// Phase 1: Ground slams + Rock Crab summons
   void _phase1Behavior(double dt) {
-    // Always chase the pod
+    // Always chase the robot
     final pod = motherlodeGame.pod;
     final direction = (pod.position - position).normalized();
     body.applyForce(direction * speed);
@@ -163,7 +163,7 @@ class NatasBoss extends Creature {
     // Camera shake
     motherlodeGame.earthquakeSystem.startShake(0.6, 1.0);
 
-    // Damage pod if nearby
+    // Damage robot if nearby
     final distToPod = position.distanceTo(motherlodeGame.pod.position);
     if (distToPod < 4) {
       final slamDamage = 15.0 * (1.0 - distToPod / 4.0);

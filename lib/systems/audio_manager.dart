@@ -96,6 +96,8 @@ class AudioManager extends Component with HasGameReference<MotherlodeGame> {
 
     try {
       await FlameAudio.bgm.stop();
+    } catch (_) {}
+    try {
       await FlameAudio.bgm.play(track, volume: _effectiveMusicVolume);
       _musicPlaying = true;
     } catch (_) {
@@ -119,11 +121,14 @@ class AudioManager extends Component with HasGameReference<MotherlodeGame> {
     if (_sfxCooldowns.containsKey(path)) return;
     _sfxCooldowns[path] = _sfxMinInterval;
 
-    try {
-      FlameAudio.play(path, volume: volume * _effectiveSfxVolume);
-    } catch (_) {
-      // Missing audio file — continue silently
-    }
+    // Fire-and-forget — wrap in async closure for proper error handling
+    () async {
+      try {
+        await FlameAudio.play(path, volume: volume * _effectiveSfxVolume);
+      } catch (_) {
+        // Missing audio file — continue silently
+      }
+    }();
   }
 
   // Convenience methods for common SFX

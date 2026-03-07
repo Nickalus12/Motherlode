@@ -102,7 +102,7 @@ class SdfTextureEncoder {
 /// Uses [LinkedHashMap] with access-order semantics to evict least-recently-used
 /// textures when the cache exceeds [_maxSize]. GPU textures are disposed on eviction.
 class SdfTextureCache {
-  static const int _maxSize = 120;
+  static const int _maxSize = 80;
 
   final LinkedHashMap<String, ui.Image> _cache =
       LinkedHashMap<String, ui.Image>();

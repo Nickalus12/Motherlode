@@ -3,6 +3,7 @@ import 'package:flutter/services.dart' show HapticFeedback;
 
 import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/utils/constants.dart';
+import 'package:motherlode/world/terrain_cell.dart';
 
 /// Hull damage and integrity system
 ///
@@ -47,7 +48,7 @@ class HullSystem extends Component {
   /// Whether hull damage was recently taken (for HUD flash)
   bool get recentDamage => _lastDamageTime < 0.5;
 
-  /// Whether the pod is destroyed
+  /// Whether the robot is destroyed
   bool get isDestroyed => currentHull <= 0;
 
   @override
@@ -114,14 +115,14 @@ class HullSystem extends Component {
     currentHull = maxHull * wasRatio;
   }
 
-  /// Check if pod is in contact with lava or gas
+  /// Check if robot is in contact with lava or gas
   void _checkHazardDamage(double dt) {
     inLava = false;
     inGas = false;
 
     if (game.isAtSurface) return;
 
-    // Check cells around pod position for hazards
+    // Check cells around robot position for hazards
     final podX = game.pod.position.x.round();
     final podY = game.pod.position.y.round();
 
@@ -129,12 +130,11 @@ class HullSystem extends Component {
       for (int dx = -1; dx <= 1; dx++) {
         final cellType = game.getCellType(podX + dx, podY + dy);
 
-        // CellType.lava = 5, CellType.gas = 6
-        if (cellType == 5) {
+        if (cellType == CellType.lava.index) {
           inLava = true;
           game.audioManager.playLavaBurn();
           takeHeatDamage(GameConstants.lavaDamagePerSecond * dt);
-        } else if (cellType == 6) {
+        } else if (cellType == CellType.gas.index) {
           inGas = true;
           takeHeatDamage(GameConstants.gasDamagePerSecond * dt);
         }
@@ -152,9 +152,11 @@ class HullSystem extends Component {
     };
   }
 
+  /// Load from save (handles missing/null keys gracefully)
   void loadFromMap(Map<String, dynamic> map) {
-    currentHull = (map['current'] as num).toDouble();
-    maxHull = (map['max'] as num).toDouble();
+    currentHull =
+        (map['current'] as num?)?.toDouble() ?? GameConstants.baseHullHP;
+    maxHull = (map['max'] as num?)?.toDouble() ?? GameConstants.baseHullHP;
     heatResistance = (map['heatResist'] as num?)?.toDouble() ?? 0;
     _totalDamageTaken = (map['totalDamage'] as num?)?.toDouble() ?? 0;
   }

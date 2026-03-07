@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Motherlode is a physics-driven procedural mining game built with **Flutter** and **Flame/Forge2D**. The player pilots a mining pod underground, collecting ores and upgrading their rig. Inspired by the classic Motherload (XGen Studios, 2004).
+Motherlode is a physics-driven procedural mining game built with **Flutter** and **Flame/Forge2D**. The player pilots a mining robot underground, collecting ores and upgrading their rig. Inspired by the classic Motherload (XGen Studios, 2004).
 
 ## Build & Run Commands
 
@@ -27,9 +27,9 @@ flutter analyze          # Static analysis (uses flutter_lints)
 
 ### Core Loop (MotherlodeGame.onLoad)
 1. `WorldGenerator` creates procedural terrain via multi-octave Simplex noise + cellular automata
-2. `ChunkManager` streams chunks in/out based on pod position (load radius 3, unload radius 5)
+2. `ChunkManager` streams chunks in/out based on robot position (load radius 3, unload radius 5)
 3. `Pod` (BodyComponent) is the player entity with physics body, drill system, cargo system
-4. Camera follows the pod; viewport overlays handle lighting, fog, and perf monitoring
+4. Camera follows the robot; viewport overlays handle lighting, fog, and perf monitoring
 
 ### Key Subsystems
 

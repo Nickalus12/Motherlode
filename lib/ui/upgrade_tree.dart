@@ -1,4 +1,6 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 
 import 'package:motherlode/data/upgrade_definitions.dart';
 import 'package:motherlode/motherlode_game.dart';
@@ -14,13 +16,51 @@ class UpgradeTreePanel extends StatefulWidget {
   State<UpgradeTreePanel> createState() => _UpgradeTreePanelState();
 }
 
-class _UpgradeTreePanelState extends State<UpgradeTreePanel> {
+class _UpgradeTreePanelState extends State<UpgradeTreePanel>
+    with TickerProviderStateMixin {
   int _selectedCategory = 0;
 
   static const _cardColor = Color(0xFF1C1C28);
   static const _surfaceColor = Color(0xFF16161E);
   static const _borderColor = Color(0xFF2A2A3A);
   static const _accentAmber = Color(0xFFF5A623);
+
+  // Unlock glow pulse animation
+  late final AnimationController _glowController;
+  // Locked shimmer animation
+  late final AnimationController _shimmerController;
+  // Purchase burst animation
+  late final AnimationController _burstController;
+  int? _justPurchasedTier;
+
+  @override
+  void initState() {
+    super.initState();
+    _glowController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    )..repeat();
+    _shimmerController = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat();
+    _burstController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..addStatusListener((status) {
+        if (status == AnimationStatus.completed) {
+          setState(() => _justPurchasedTier = null);
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _glowController.dispose();
+    _shimmerController.dispose();
+    _burstController.dispose();
+    super.dispose();
+  }
 
   static const _categoryColors = [
     Colors.orange, // Drill
@@ -196,120 +236,211 @@ class _UpgradeTreePanelState extends State<UpgradeTreePanel> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Progress line
+              // Progress line with animated glow
               SizedBox(
                 width: 32,
-                child: Column(
-                  children: [
-                    if (index > 0)
-                      Container(
-                        width: 2,
-                        height: 8,
-                        color: isOwned
-                            ? catColor.withValues(alpha: 0.5)
-                            : Colors.white.withValues(alpha: 0.08),
-                      ),
-                    _buildTierDot(isOwned, isNext, isLocked, catColor),
-                    if (index < category.tiers.length - 1)
-                      Container(
-                        width: 2,
-                        height: 8,
-                        color: isOwned
-                            ? catColor.withValues(alpha: 0.5)
-                            : Colors.white.withValues(alpha: 0.08),
-                      ),
-                  ],
+                child: AnimatedBuilder(
+                  animation: _glowController,
+                  builder: (context, _) {
+                    final glowPulse =
+                        0.3 + 0.2 * sin(_glowController.value * 2 * pi);
+                    return Column(
+                      children: [
+                        if (index > 0)
+                          Container(
+                            width: isOwned ? 3 : 2,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: isOwned
+                                  ? catColor.withValues(alpha: 0.5 + glowPulse)
+                                  : Colors.white.withValues(alpha: 0.08),
+                              boxShadow: isOwned
+                                  ? [
+                                      BoxShadow(
+                                        color: catColor.withValues(
+                                            alpha: glowPulse),
+                                        blurRadius: 4,
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                          ),
+                        _buildTierDot(isOwned, isNext, isLocked, catColor),
+                        if (index < category.tiers.length - 1)
+                          Container(
+                            width: isOwned ? 3 : 2,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: isOwned
+                                  ? catColor.withValues(alpha: 0.5 + glowPulse)
+                                  : Colors.white.withValues(alpha: 0.08),
+                              boxShadow: isOwned
+                                  ? [
+                                      BoxShadow(
+                                        color: catColor.withValues(
+                                            alpha: glowPulse),
+                                        blurRadius: 4,
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                          ),
+                      ],
+                    );
+                  },
                 ),
               ),
               const SizedBox(width: 8),
 
-              // Tier card
+              // Tier card with locked shimmer and purchase burst
               Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isOwned
-                        ? catColor.withValues(alpha: 0.06)
-                        : isNext
-                            ? (canAfford
-                                ? _accentAmber.withValues(alpha: 0.04)
-                                : _cardColor)
-                            : _cardColor,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: isOwned
-                          ? catColor.withValues(alpha: 0.3)
-                          : isNext && canAfford
-                              ? _accentAmber.withValues(alpha: 0.3)
-                              : _borderColor,
-                    ),
-                    boxShadow: isOwned
-                        ? [
-                            BoxShadow(
-                              color: catColor.withValues(alpha: 0.08),
-                              blurRadius: 6,
+                child: AnimatedBuilder(
+                  animation: isLocked ? _shimmerController : _burstController,
+                  builder: (context, _) {
+                    final isBurstTarget = _justPurchasedTier == index;
+                    final burstVal =
+                        isBurstTarget ? (1.0 - _burstController.value) : 0.0;
+
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isBurstTarget
+                                ? Color.lerp(
+                                    _cardColor, catColor, burstVal * 0.15)
+                                : isOwned
+                                    ? catColor.withValues(alpha: 0.06)
+                                    : isNext
+                                        ? (canAfford
+                                            ? _accentAmber.withValues(
+                                                alpha: 0.04)
+                                            : _cardColor)
+                                        : _cardColor,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isBurstTarget
+                                  ? catColor.withValues(
+                                      alpha: 0.5 + burstVal * 0.5)
+                                  : isOwned
+                                      ? catColor.withValues(alpha: 0.3)
+                                      : isNext && canAfford
+                                          ? _accentAmber.withValues(alpha: 0.3)
+                                          : _borderColor,
                             ),
-                          ]
-                        : null,
-                  ),
-                  child: Row(
-                    children: [
-                      _buildTierIcon(index, isOwned, isLocked, catColor),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              tier.name,
-                              style: TextStyle(
-                                color: isOwned
-                                    ? catColor
-                                    : isLocked
-                                        ? Colors.white24
-                                        : Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
+                            boxShadow: isBurstTarget
+                                ? [
+                                    BoxShadow(
+                                      color: catColor.withValues(
+                                          alpha: burstVal * 0.4),
+                                      blurRadius: 16,
+                                    ),
+                                  ]
+                                : isOwned
+                                    ? [
+                                        BoxShadow(
+                                          color:
+                                              catColor.withValues(alpha: 0.08),
+                                          blurRadius: 6,
+                                        ),
+                                      ]
+                                    : null,
+                          ),
+                          child: Row(
+                            children: [
+                              _buildTierIcon(
+                                  index, isOwned, isLocked, catColor),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      tier.name,
+                                      style: TextStyle(
+                                        color: isOwned
+                                            ? catColor
+                                            : isLocked
+                                                ? Colors.white24
+                                                : Colors.white,
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      tier.description,
+                                      style: TextStyle(
+                                        color: isLocked
+                                            ? Colors.white
+                                                .withValues(alpha: 0.1)
+                                            : Colors.white
+                                                .withValues(alpha: 0.45),
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                    if (!isOwned && !isAncientScrollTier)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 3),
+                                        child: Text(
+                                          'Stat: ${tier.statValue}',
+                                          style: TextStyle(
+                                            color: Colors.cyan.withValues(
+                                                alpha: isLocked ? 0.2 : 0.6),
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              tier.description,
-                              style: TextStyle(
-                                color: isLocked
-                                    ? Colors.white.withValues(alpha: 0.1)
-                                    : Colors.white.withValues(alpha: 0.45),
-                                fontSize: 11,
+                              _buildTierAction(
+                                isOwned: isOwned,
+                                isNext: isNext,
+                                isLocked: isLocked,
+                                isAncientScrollTier: isAncientScrollTier,
+                                canAfford: canAfford,
+                                cost: tier.cost,
+                                catColor: catColor,
+                                onBuy: () => _purchaseUpgrade(index),
                               ),
-                            ),
-                            if (!isOwned && !isAncientScrollTier)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 3),
-                                child: Text(
-                                  'Stat: ${tier.statValue}',
-                                  style: TextStyle(
-                                    color: Colors.cyan.withValues(
-                                        alpha: isLocked ? 0.2 : 0.6),
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w500,
+                            ],
+                          ),
+                        ),
+                        // Locked shimmer overlay
+                        if (isLocked)
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: ShaderMask(
+                                  shaderCallback: (bounds) {
+                                    final shimmerPos =
+                                        _shimmerController.value * 2 - 0.5;
+                                    return LinearGradient(
+                                      begin: Alignment(-1 + shimmerPos * 2, 0),
+                                      end: Alignment(shimmerPos * 2, 0),
+                                      colors: const [
+                                        Color(0x00000000),
+                                        Color(0x08FFFFFF),
+                                        Color(0x00000000),
+                                      ],
+                                      stops: const [0.0, 0.5, 1.0],
+                                    ).createShader(bounds);
+                                  },
+                                  blendMode: BlendMode.srcATop,
+                                  child: Container(
+                                    color: Colors.white.withValues(alpha: 0.02),
                                   ),
                                 ),
                               ),
-                          ],
-                        ),
-                      ),
-                      _buildTierAction(
-                        isOwned: isOwned,
-                        isNext: isNext,
-                        isLocked: isLocked,
-                        isAncientScrollTier: isAncientScrollTier,
-                        canAfford: canAfford,
-                        cost: tier.cost,
-                        catColor: catColor,
-                        onBuy: () => _purchaseUpgrade(index),
-                      ),
-                    ],
-                  ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ],
@@ -686,7 +817,10 @@ class _UpgradeTreePanelState extends State<UpgradeTreePanel> {
           widget.game.pod.cargoSystem.maxCapacity = tier.statValue;
           break;
       }
+      _justPurchasedTier = tierIndex;
     });
+    _burstController.forward(from: 0);
+    HapticFeedback.lightImpact();
   }
 
   String _formatCost(int cost) {

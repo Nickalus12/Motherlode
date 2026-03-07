@@ -3,13 +3,13 @@ import 'package:flame_forge2d/flame_forge2d.dart';
 import 'package:motherlode/motherlode_game.dart';
 import 'package:motherlode/utils/constants.dart';
 
-/// Forge2D BodyComponent for the player pod
+/// Forge2D BodyComponent for the player robot
 ///
-/// Pod is a BodyType.dynamic body with:
+/// Robot is a BodyType.dynamic body with:
 /// - Mass: base 500kg + cargo weight
 /// - Linear damping: 0.8 (floaty but controllable)
 /// - Angular damping: 5.0 (no spinning)
-/// - Fixture: rounded rectangle shape matching pod bounds
+/// - Fixture: rounded rectangle shape matching robot bounds
 class PodBody extends BodyComponent with ContactCallbacks {
   @override
   final MotherlodeGame game;
@@ -21,7 +21,7 @@ class PodBody extends BodyComponent with ContactCallbacks {
   int _groundContactCount = 0;
 
   PodBody({required this.game}) {
-    // Pod dimensions in Forge2D meters
+    // Robot dimensions in Forge2D meters
     _width = 1.8;
     _height = 2.2;
   }
@@ -39,13 +39,15 @@ class PodBody extends BodyComponent with ContactCallbacks {
 
     final body = world.createBody(bodyDef);
 
-    // Create pod shape as a polygon (rounded rect approximation)
+    // Create robot shape as a polygon (rounded rect approximation)
     final shape = PolygonShape()..setAsBoxXY(_width / 2, _height / 2);
 
     body.createFixture(FixtureDef(shape)
       ..density = _calculateDensity()
-      ..friction = 0.6
+      ..friction = 0.3
       ..restitution = 0.0
+      ..filter.categoryBits = GameConstants.collisionCategoryPod
+      ..filter.maskBits = GameConstants.collisionMaskPod
       ..userData = this);
 
     // Add a sensor at the bottom for ground detection
@@ -59,6 +61,8 @@ class PodBody extends BodyComponent with ContactCallbacks {
 
     body.createFixture(FixtureDef(sensorShape)
       ..isSensor = true
+      ..filter.categoryBits = GameConstants.collisionCategoryPod
+      ..filter.maskBits = GameConstants.collisionMaskPod
       ..userData = 'ground_sensor');
 
     return body;
@@ -78,8 +82,10 @@ class PodBody extends BodyComponent with ContactCallbacks {
     final fixture = body.fixtures.first;
     final newDef = FixtureDef(fixture.shape)
       ..density = _calculateDensity()
-      ..friction = 0.6
+      ..friction = 0.3
       ..restitution = 0.0
+      ..filter.categoryBits = GameConstants.collisionCategoryPod
+      ..filter.maskBits = GameConstants.collisionMaskPod
       ..userData = this;
 
     body.destroyFixture(fixture);
@@ -106,7 +112,7 @@ class PodBody extends BodyComponent with ContactCallbacks {
     body.applyForce(force);
   }
 
-  /// Apply an explosion impulse to the pod
+  /// Apply an explosion impulse to the robot
   void applyExplosionImpulse(Vector2 impulse) {
     body.applyLinearImpulse(impulse);
   }

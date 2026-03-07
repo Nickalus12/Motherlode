@@ -110,13 +110,20 @@ class CargoSystem {
     };
   }
 
-  /// Restore from save data
+  /// Restore from save data (handles missing/null keys gracefully)
   void loadFromMap(Map<String, dynamic> map) {
-    maxCapacity = (map['maxCapacity'] as num).toDouble();
+    maxCapacity = (map['maxCapacity'] as num?)?.toDouble() ?? maxCapacity;
     _inventory.clear();
-    final saved = map['inventory'] as Map<String, dynamic>;
-    for (final entry in saved.entries) {
-      _inventory[entry.key] = entry.value as int;
+    final saved = map['inventory'] as Map<String, dynamic>?;
+    if (saved != null) {
+      for (final entry in saved.entries) {
+        final count = entry.value;
+        if (count is int) {
+          _inventory[entry.key] = count;
+        } else if (count is num) {
+          _inventory[entry.key] = count.toInt();
+        }
+      }
     }
     // Recalculate weight
     _currentWeight = 0;
