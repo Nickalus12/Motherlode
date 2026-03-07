@@ -52,11 +52,22 @@ class DrillSystem extends Component {
     final cell = game.chunkManager.getTerrainCell(gridX, gridY);
     if (cell == null || !cell.isDrillable) return;
 
-    // Track target for progress
+    // Track target for progress — only reset when targeting a different cell
     if (_targetGridX != gridX || _targetGridY != gridY) {
+      // If the new target is adjacent to the old one, carry over partial
+      // progress scaled by hardness ratio. This prevents the "stutter" feel
+      // when the pod drifts slightly while drilling through a vein.
+      if (_targetGridX != null &&
+          (gridX - _targetGridX!).abs() <= 1 &&
+          (gridY - _targetGridY!).abs() <= 1 &&
+          _currentCellProgress > 0) {
+        // Carry 25% of progress to the new cell to smooth transitions
+        _currentCellProgress *= 0.25;
+      } else {
+        _currentCellProgress = 0;
+      }
       _targetGridX = gridX;
       _targetGridY = gridY;
-      _currentCellProgress = 0;
     }
 
     // Calculate drill speed based on drill level and material hardness

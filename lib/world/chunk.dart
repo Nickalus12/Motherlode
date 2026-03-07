@@ -55,12 +55,19 @@ class Chunk extends BodyComponent {
   void markDirty() {
     _isDirty = true;
     _cachedPicture = null;
+    _leftColCache = null;
+    _rightColCache = null;
   }
 
   /// Mark chunk as clean with a cached picture
   void markClean(ui.Picture picture) {
     _isDirty = false;
     _cachedPicture = picture;
+  }
+
+  /// Mark chunk as clean without a cached picture (used by GPU shader path).
+  void clearDirty() {
+    _isDirty = false;
   }
 
   /// Set border data from neighboring chunks
@@ -89,12 +96,15 @@ class Chunk extends BodyComponent {
   /// Get the bottom row of cells (for neighbor border data)
   List<TerrainCell> get bottomRow => cells[GameConstants.chunkSize - 1];
 
-  /// Get the left column of cells (for neighbor border data)
+  /// Get the left column of cells (for neighbor border data).
+  /// Cached to avoid repeated List.generate allocations during border updates.
+  List<TerrainCell>? _leftColCache;
   List<TerrainCell> get leftCol =>
-      List.generate(GameConstants.chunkSize, (y) => cells[y][0]);
+      _leftColCache ??= List.generate(GameConstants.chunkSize, (y) => cells[y][0]);
 
-  /// Get the right column of cells (for neighbor border data)
-  List<TerrainCell> get rightCol => List.generate(
+  /// Get the right column of cells (for neighbor border data).
+  List<TerrainCell>? _rightColCache;
+  List<TerrainCell> get rightCol => _rightColCache ??= List.generate(
       GameConstants.chunkSize, (y) => cells[y][GameConstants.chunkSize - 1]);
 
   /// Remove a cell (set to empty) and mark dirty

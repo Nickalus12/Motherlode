@@ -2,10 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-/// Title screen with new game, load, and leaderboard options.
-///
-/// Deep underground-themed design with animated ember particles,
-/// geological gradient background, and glowing title.
+/// Title screen with underground-themed design, ember particles, and glowing title.
 class MainMenu extends StatefulWidget {
   final VoidCallback onNewGame;
   final VoidCallback onLoadGame;
@@ -69,7 +66,7 @@ class _MainMenuState extends State<MainMenu> with TickerProviderStateMixin {
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // Background: deep underground gradient (no image dependency)
+          // Background: rich underground gradient
           Positioned.fill(
             child: AnimatedBuilder(
               animation: _titleGlowController,
@@ -77,20 +74,25 @@ class _MainMenuState extends State<MainMenu> with TickerProviderStateMixin {
                 final glow = _titleGlowController.value;
                 return Container(
                   decoration: BoxDecoration(
-                    gradient: RadialGradient(
-                      center: const Alignment(0, -0.3),
-                      radius: 1.5,
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
                       colors: [
+                        const Color(0xFF000000),
+                        Color.lerp(
+                          const Color(0xFF0A0503),
+                          const Color(0xFF120800),
+                          glow * 0.3,
+                        )!,
                         Color.lerp(
                           const Color(0xFF1A0D05),
                           const Color(0xFF2A1200),
                           glow * 0.3,
                         )!,
-                        const Color(0xFF0D0808),
-                        const Color(0xFF050303),
-                        Colors.black,
+                        const Color(0xFF0D0604),
+                        const Color(0xFF050202),
                       ],
-                      stops: const [0.0, 0.35, 0.65, 1.0],
+                      stops: const [0.0, 0.2, 0.45, 0.7, 1.0],
                     ),
                   ),
                 );
@@ -150,66 +152,67 @@ class _MainMenuState extends State<MainMenu> with TickerProviderStateMixin {
               children: [
                 const Spacer(flex: 3),
 
-                // Title with animated glow
+                // Title with animated glow + heat shimmer
                 AnimatedBuilder(
-                  animation: _titleGlowController,
+                  animation: Listenable.merge(
+                      [_titleGlowController, _particleController]),
                   builder: (context, _) {
                     final glow = _titleGlowController.value;
-                    return Column(
-                      children: [
-                        Text(
-                          'MOTHERLODE',
-                          style: TextStyle(
-                            color: Colors.amber,
-                            fontSize: 42,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 8,
-                            shadows: [
-                              Shadow(
-                                color: Colors.red
-                                    .withValues(alpha: 0.5 + 0.3 * glow),
-                                blurRadius: 20 + 15 * glow,
-                              ),
-                              Shadow(
-                                color: Colors.orange
-                                    .withValues(alpha: 0.4 + 0.2 * glow),
-                                blurRadius: 40 + 20 * glow,
-                              ),
-                              Shadow(
-                                color:
-                                    Colors.amber.withValues(alpha: 0.2 * glow),
-                                blurRadius: 60,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        // Animated accent line
-                        Container(
-                          width: 180 + 40 * glow,
-                          height: 2,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                Colors.transparent,
-                                Colors.amber
-                                    .withValues(alpha: 0.4 + 0.3 * glow),
-                                Colors.amber
-                                    .withValues(alpha: 0.4 + 0.3 * glow),
-                                Colors.transparent,
+                    final shimmer =
+                        sin(_particleController.value * 2 * pi * 3) * 0.5;
+                    return Transform.translate(
+                      offset: Offset(0, shimmer),
+                      child: Column(
+                        children: [
+                          Text(
+                            'MOTHERLODE',
+                            style: TextStyle(
+                              color: Colors.amber,
+                              fontSize: 42,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 8,
+                              shadows: [
+                                Shadow(
+                                  color: Colors.red
+                                      .withValues(alpha: 0.5 + 0.3 * glow),
+                                  blurRadius: 20 + 15 * glow,
+                                ),
+                                Shadow(
+                                  color: Colors.amber
+                                      .withValues(alpha: 0.3 + 0.2 * glow),
+                                  blurRadius: 50 + 20 * glow,
+                                ),
                               ],
                             ),
-                            boxShadow: [
-                              BoxShadow(
-                                color:
-                                    Colors.amber.withValues(alpha: 0.3 * glow),
-                                blurRadius: 10,
-                                spreadRadius: 1,
-                              ),
-                            ],
                           ),
-                        ),
-                      ],
+                          const SizedBox(height: 4),
+                          // Animated accent line
+                          Container(
+                            width: 180 + 40 * glow,
+                            height: 2,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [
+                                  Colors.transparent,
+                                  Colors.amber
+                                      .withValues(alpha: 0.4 + 0.3 * glow),
+                                  Colors.amber
+                                      .withValues(alpha: 0.4 + 0.3 * glow),
+                                  Colors.transparent,
+                                ],
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.amber
+                                      .withValues(alpha: 0.3 * glow),
+                                  blurRadius: 10,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     );
                   },
                 ),
@@ -271,7 +274,7 @@ class _MainMenuState extends State<MainMenu> with TickerProviderStateMixin {
                         _MenuButton(
                           label: 'LOAD GAME',
                           color: Colors.cyan,
-                          icon: Icons.save,
+                          icon: Icons.folder_open,
                           onTap: widget.onLoadGame,
                         ),
                         const SizedBox(height: 14),
@@ -287,6 +290,22 @@ class _MainMenuState extends State<MainMenu> with TickerProviderStateMixin {
                 ),
 
                 const Spacer(flex: 2),
+
+                // Separator line above version info
+                Container(
+                  width: 120,
+                  height: 1,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.transparent,
+                        Colors.white.withValues(alpha: 0.08),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
 
                 // Version info
                 Text(
@@ -304,7 +323,7 @@ class _MainMenuState extends State<MainMenu> with TickerProviderStateMixin {
                     fontSize: 9,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
               ],
             ),
           ),
@@ -425,6 +444,7 @@ class _MenuButton extends StatefulWidget {
 class _MenuButtonState extends State<_MenuButton>
     with SingleTickerProviderStateMixin {
   bool _hovering = false;
+  bool _pressing = false;
   late final AnimationController _pulseController;
 
   @override
@@ -447,6 +467,11 @@ class _MenuButtonState extends State<_MenuButton>
 
   @override
   Widget build(BuildContext context) {
+    final buttonWidth = widget.isPrimary ? 280.0 : 260.0;
+    final verticalPad = widget.isPrimary ? 16.0 : 14.0;
+    final fontSize = widget.isPrimary ? 15.0 : 14.0;
+    final iconSize = widget.isPrimary ? 24.0 : 22.0;
+
     return AnimatedBuilder(
       animation: _pulseController,
       builder: (context, _) {
@@ -455,55 +480,69 @@ class _MenuButtonState extends State<_MenuButton>
           onEnter: (_) => setState(() => _hovering = true),
           onExit: (_) => setState(() => _hovering = false),
           child: GestureDetector(
-            onTap: widget.onTap,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 260,
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    widget.color.withValues(
-                        alpha: (_hovering ? 0.18 : 0.06) + pulse * 0.05),
-                    widget.color.withValues(
-                        alpha: (_hovering ? 0.08 : 0.02) + pulse * 0.02),
+            onTapDown: (_) => setState(() => _pressing = true),
+            onTapUp: (_) {
+              setState(() => _pressing = false);
+              widget.onTap();
+            },
+            onTapCancel: () => setState(() => _pressing = false),
+            child: AnimatedScale(
+              scale: _pressing ? 0.97 : 1.0,
+              duration: const Duration(milliseconds: 100),
+              curve: Curves.easeOut,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: buttonWidth,
+                padding: EdgeInsets.symmetric(
+                    vertical: verticalPad, horizontal: 20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      widget.color.withValues(
+                          alpha: (_hovering ? 0.18 : 0.06) + pulse * 0.05),
+                      widget.color.withValues(
+                          alpha: (_hovering ? 0.08 : 0.02) + pulse * 0.02),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: widget.color.withValues(
+                        alpha: (_hovering ? 0.7 : 0.25) + pulse * 0.15),
+                    width: widget.isPrimary ? 1.8 : 1.5,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: widget.color.withValues(
+                          alpha: (_hovering ? 0.15 : 0.03) + pulse * 0.08),
+                      blurRadius: 16 + pulse * 8,
+                      spreadRadius: -2,
+                    ),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: widget.color.withValues(
-                      alpha: (_hovering ? 0.7 : 0.25) + pulse * 0.15),
-                  width: 1.5,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: widget.color.withValues(
-                        alpha: (_hovering ? 0.15 : 0.03) + pulse * 0.08),
-                    blurRadius: 16 + pulse * 8,
-                    spreadRadius: -2,
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    widget.icon,
-                    color: widget.color.withValues(alpha: 0.6 + pulse * 0.3),
-                    size: 22,
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    widget.label,
-                    style: TextStyle(
-                      color: widget.color.withValues(alpha: 0.7 + pulse * 0.3),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 3,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      widget.icon,
+                      color:
+                          widget.color.withValues(alpha: 0.6 + pulse * 0.3),
+                      size: iconSize,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Text(
+                      widget.label,
+                      style: TextStyle(
+                        color: widget.color
+                            .withValues(alpha: 0.7 + pulse * 0.3),
+                        fontSize: fontSize,
+                        fontWeight:
+                            widget.isPrimary ? FontWeight.w700 : FontWeight.w600,
+                        letterSpacing: 3,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -524,11 +563,11 @@ class _MenuParticleOverlay extends CustomPainter {
     final random = Random(42);
     final paint = Paint()..style = PaintingStyle.fill;
 
-    for (int i = 0; i < 60; i++) {
+    for (int i = 0; i < 40; i++) {
       final baseX = random.nextDouble() * size.width;
       final baseY = random.nextDouble() * size.height;
       final speed = 0.3 + random.nextDouble() * 1.2;
-      final pSize = 0.6 + random.nextDouble() * 2.0;
+      final pSize = 0.8 + random.nextDouble() * 2.2;
 
       final x = baseX + sin(phase * 2 * pi * speed + i) * 20;
       final y = (baseY - phase * size.height * speed * 0.12) % size.height;
@@ -544,15 +583,15 @@ class _MenuParticleOverlay extends CustomPainter {
 
       canvas.drawCircle(Offset(x, y), pSize, paint);
 
-      // Glow around larger particles
-      if (pSize > 1.5) {
+      // Glow around particles — slightly larger radius for vividness
+      if (pSize > 1.2) {
         paint.color = Color.from(
-          alpha: alpha * 0.1,
+          alpha: alpha * 0.12,
           red: 1.0,
           green: 0.45,
           blue: 0.05,
         );
-        canvas.drawCircle(Offset(x, y), pSize * 4, paint);
+        canvas.drawCircle(Offset(x, y), pSize * 5, paint);
       }
     }
   }
@@ -562,7 +601,7 @@ class _MenuParticleOverlay extends CustomPainter {
       oldDelegate.phase != phase;
 }
 
-/// Subtle horizontal geological lines for atmosphere.
+/// Layered horizontal geological lines with depth-appropriate colors.
 class _GeologicalLinesPainter extends CustomPainter {
   final double phase;
 
@@ -574,13 +613,25 @@ class _GeologicalLinesPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.5;
 
+    // Layer colors: top = sandy tan, middle = grey-brown, bottom = dark red
+    const layerColors = [
+      Color(0xFF8B6B3D), // sandy tan
+      Color(0xFF8B6B3D),
+      Color(0xFF6A5A40),
+      Color(0xFF5C4A38), // grey-brown
+      Color(0xFF5C4A38),
+      Color(0xFF4A3028),
+      Color(0xFF3A1515), // dark red-brown
+      Color(0xFF3A1515),
+    ];
+
     for (int i = 0; i < 8; i++) {
       final y = size.height * (0.15 + i * 0.1);
       final yOffset = sin(phase * pi * 2 + i * 1.3) * 10;
       final alpha =
-          (0.02 + 0.02 * sin(phase * pi * 2 + i * 0.8)).clamp(0.0, 0.05);
+          (0.04 + 0.03 * sin(phase * pi * 2 + i * 0.8)).clamp(0.0, 0.08);
 
-      paint.color = Colors.amber.withValues(alpha: alpha);
+      paint.color = layerColors[i].withValues(alpha: alpha);
 
       final path = Path();
       path.moveTo(0, y + yOffset);

@@ -70,10 +70,16 @@ class ShaderTerrainRenderer extends Component
                 GameConstants.podLightPerLevel /
                 GameConstants.pixelsPerMeter;
 
+    // Screen pixels per world tile = camera zoom
+    final screenScale = game.camera.viewfinder.zoom;
+
     for (final chunk in visibleChunks) {
-      _renderChunk(canvas, chunk, pod.position, lightRadius, depthFeet);
+      _renderChunk(canvas, chunk, pod.position, lightRadius, depthFeet, screenScale);
     }
   }
+
+  // Pre-allocated Paint to avoid per-frame allocation
+  final ui.Paint _chunkPaint = ui.Paint();
 
   void _renderChunk(
     ui.Canvas canvas,
@@ -81,6 +87,7 @@ class ShaderTerrainRenderer extends Component
     Vector2 podPos,
     double lightRadius,
     double depthFeet,
+    double screenScale,
   ) {
     final shader = _shader!;
     final chunkWorldX = chunk.chunkX * GameConstants.chunkSize.toDouble();
@@ -109,6 +116,8 @@ class ShaderTerrainRenderer extends Component
     shader.setFloat(8, depthFeet);
     // 9: uChunkSize
     shader.setFloat(9, chunkSizePx);
+    // 10: uScreenScale — screen pixels per world tile (camera zoom)
+    shader.setFloat(10, screenScale);
 
     // Set sampler 0: SDF texture
     shader.setImageSampler(0, sdfTexture);
@@ -116,9 +125,10 @@ class ShaderTerrainRenderer extends Component
     // Draw the chunk rect in world space
     canvas.save();
     canvas.translate(chunkWorldX, chunkWorldY);
+    _chunkPaint.shader = shader;
     canvas.drawRect(
       ui.Rect.fromLTWH(0, 0, chunkSizePx, chunkSizePx),
-      ui.Paint()..shader = shader,
+      _chunkPaint,
     );
     canvas.restore();
   }

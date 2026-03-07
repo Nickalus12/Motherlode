@@ -4,34 +4,31 @@ out vec4 fragColor;
 
 // ============================================================================
 // Motherlode Terrain Fragment Shader
-// SDF terrain rendering with procedural texturing, dynamic lighting,
-// ambient occlusion, animated effects, and procedural grass.
+// SDF terrain rendering with smooth material blending, natural fog of war,
+// dynamic lighting, ambient occlusion, and procedural texturing.
 // ============================================================================
 
-// --- Uniforms (Flutter: sequential float indices, samplers separate) --------
-uniform float uSizeX;          // index 0 - output rect width pixels
-uniform float uSizeY;          // index 1 - output rect height pixels
-uniform float uChunkWorldX;    // index 2 - chunk world X in tiles
-uniform float uChunkWorldY;    // index 3 - chunk world Y in tiles
-uniform float uTime;           // index 4 - animation time
-uniform float uPodPosX;        // index 5 - pod world X
-uniform float uPodPosY;        // index 6 - pod world Y
-uniform float uPodLightRadius; // index 7 - light radius in tiles
-uniform float uDepthFeet;      // index 8 - camera depth
-uniform float uChunkSize;      // index 9 - chunk size (32)
+// --- Uniforms ----------------------------------------------------------------
+uniform float uSizeX;          // index 0
+uniform float uSizeY;          // index 1
+uniform float uChunkWorldX;    // index 2
+uniform float uChunkWorldY;    // index 3
+uniform float uTime;           // index 4
+uniform float uPodPosX;        // index 5
+uniform float uPodPosY;        // index 6
+uniform float uPodLightRadius; // index 7
+uniform float uDepthFeet;      // index 8
+uniform float uChunkSize;      // index 9
+uniform float uScreenScale;    // index 10 - screen pixels per tile (camera zoom)
 uniform sampler2D uSdfTexture; // sampler index 0
 
-// --- Derived convenience ---
 #define uSize        vec2(uSizeX, uSizeY)
 #define uChunkWorld  vec2(uChunkWorldX, uChunkWorldY)
 #define uPodPos      vec2(uPodPosX, uPodPosY)
 
-// --- Constants --------------------------------------------------------------
 const float PI            = 3.14159265359;
-const float TAU           = 6.28318530718;
 const float FEET_PER_TILE = 15.0;
 
-// Material IDs (from G channel * 255)
 const int MAT_TOPSOIL    = 0;
 const int MAT_SANDSTONE  = 1;
 const int MAT_LIMESTONE  = 2;
@@ -44,14 +41,9 @@ const int MAT_HELLSTONE  = 8;
 const int MAT_ORE        = 9;
 const int MAT_LAVA       = 10;
 
-// Flag bits (from A channel * 255)
-const int FLAG_ORE     = 1;
-const int FLAG_LAVA    = 2;
-const int FLAG_BEDROCK = 4;
-
 
 // ============================================================================
-//  SIMPLEX NOISE  (Ashima Arts / webgl-noise)
+//  SIMPLEX NOISE
 // ============================================================================
 
 vec3 mod289_3(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -60,14 +52,9 @@ vec2 mod289_2(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
 vec3 permute3(vec3 x) { return mod289_3(((x * 34.0) + 10.0) * x); }
 vec4 permute4(vec4 x) { return mod289_4(((x * 34.0) + 10.0) * x); }
 
-// 2D Simplex Noise
 float snoise2(vec2 v) {
-    const vec4 C = vec4(
-        0.211324865405187,   // (3 - sqrt(3)) / 6
-        0.366025403784439,   // 0.5 * (sqrt(3) - 1)
-       -0.577350269189626,   // -1 + 2 * C.x
-        0.024390243902439    // 1 / 41
-    );
+    const vec4 C = vec4(0.211324865405187, 0.366025403784439,
+                       -0.577350269189626, 0.024390243902439);
     vec2 i  = floor(v + dot(v, C.yy));
     vec2 x0 = v - i + dot(i, C.xx);
     vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
@@ -90,7 +77,6 @@ float snoise2(vec2 v) {
     return 130.0 * dot(m, g);
 }
 
-// 3D Simplex Noise
 float snoise3(vec3 v) {
     const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
     const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
@@ -108,7 +94,7 @@ float snoise3(vec3 v) {
              i.z + vec4(0.0, i1.z, i2.z, 1.0))
            + i.y + vec4(0.0, i1.y, i2.y, 1.0))
            + i.x + vec4(0.0, i1.x, i2.x, 1.0));
-    float n_ = 0.142857142857; // 1/7
+    float n_ = 0.142857142857;
     vec3  ns = n_ * D.wyz - D.xzx;
     vec4 j  = p - 49.0 * floor(p * ns.z * ns.z);
     vec4 x_ = floor(j * ns.z);
@@ -135,10 +121,9 @@ float snoise3(vec3 v) {
     return 42.0 * dot(m * m, vec4(dot(p0, x0), dot(p1, x1), dot(p2, x2), dot(p3, x3)));
 }
 
-// FBM 2D (4 octaves)
 float fbm2(vec2 p) {
     float f = 0.0, a = 0.5;
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < 3; i++) {
         f += a * snoise2(p);
         p *= 2.07;
         a *= 0.5;
@@ -146,10 +131,9 @@ float fbm2(vec2 p) {
     return f;
 }
 
-// FBM 3D (3 octaves, for animation)
 float fbm3(vec3 p) {
     float f = 0.0, a = 0.5;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 2; i++) {
         f += a * snoise3(p);
         p *= 2.07;
         a *= 0.5;
@@ -159,30 +143,21 @@ float fbm3(vec3 p) {
 
 
 // ============================================================================
-//  UTILITY
-// ============================================================================
-
-float hash(vec2 p) {
-    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
-    p3 += dot(p3, p3.yzx + 33.33);
-    return fract((p3.x + p3.y) * p3.z);
-}
-
-
-// ============================================================================
 //  SDF TEXTURE SAMPLING
 // ============================================================================
 
-// Raw SDF value: [0,1] -> [-2, +2]
 float sampleSdf(vec2 uv) {
     return (texture(uSdfTexture, uv).r - 0.5) * 4.0;
 }
 
-// Full decode: vec4(sdf, materialId, subType, flags)
-vec4 sampleFull(vec2 uv) {
-    vec4 texel = texture(uSdfTexture, uv);
-    return vec4(
-        (texel.r - 0.5) * 4.0,
+vec4 texelAtCell(float cx, float cy) {
+    vec2 uv = (vec2(cx, cy) + 0.5) / uChunkSize;
+    uv = clamp(uv, 0.5 / uChunkSize, 1.0 - 0.5 / uChunkSize);
+    return texture(uSdfTexture, uv);
+}
+
+vec3 decodeCell(vec4 texel) {
+    return vec3(
         floor(texel.g * 255.0 + 0.5),
         floor(texel.b * 255.0 + 0.5),
         floor(texel.a * 255.0 + 0.5)
@@ -207,31 +182,62 @@ vec2 computeNormal(vec2 uv) {
 
 
 // ============================================================================
-//  MATERIAL COLOR PALETTE
+//  MATERIAL COLOR PALETTE — brighter, more saturated colors
 // ============================================================================
 
-vec3 getMaterialBaseColor(int matId, vec2 worldPos, float subType) {
+vec3 getMatColor(float matIdF, vec2 wp, float subType) {
+    int matId = int(matIdF);
     vec3 col;
-    if      (matId == MAT_TOPSOIL)   col = vec3(0.35, 0.27, 0.16);
-    else if (matId == MAT_SANDSTONE) col = vec3(0.40, 0.31, 0.19);
-    else if (matId == MAT_LIMESTONE) col = vec3(0.35, 0.32, 0.23);
-    else if (matId == MAT_SHALE)     col = vec3(0.361, 0.290, 0.220);
-    else if (matId == MAT_GRANITE)   col = vec3(0.30, 0.30, 0.30);
-    else if (matId == MAT_BASALT)    col = vec3(0.282, 0.282, 0.282);
-    else if (matId == MAT_OBSIDIAN)  col = vec3(0.176, 0.106, 0.239);
-    else if (matId == MAT_MANTLE)    col = vec3(0.227, 0.082, 0.082);
-    else if (matId == MAT_HELLSTONE) col = vec3(0.102, 0.020, 0.020);
-    else if (matId == MAT_ORE)       col = vec3(0.85, 0.72, 0.20);
-    else if (matId == MAT_LAVA)      col = vec3(1.0, 0.270, 0.0);
+    if      (matId == MAT_TOPSOIL)   col = vec3(0.45, 0.35, 0.22);
+    else if (matId == MAT_SANDSTONE) col = vec3(0.55, 0.42, 0.28);
+    else if (matId == MAT_LIMESTONE) col = vec3(0.50, 0.47, 0.38);
+    else if (matId == MAT_SHALE)     col = vec3(0.40, 0.34, 0.28);
+    else if (matId == MAT_GRANITE)   col = vec3(0.45, 0.44, 0.43);
+    else if (matId == MAT_BASALT)    col = vec3(0.35, 0.34, 0.38);
+    else if (matId == MAT_OBSIDIAN)  col = vec3(0.22, 0.14, 0.28);
+    else if (matId == MAT_MANTLE)    col = vec3(0.30, 0.12, 0.10);
+    else if (matId == MAT_HELLSTONE) col = vec3(0.18, 0.06, 0.05);
+    else if (matId == MAT_ORE)       col = vec3(0.90, 0.78, 0.30);
+    else if (matId == MAT_LAVA)      col = vec3(1.0, 0.35, 0.05);
     else                             col = vec3(0.5, 0.5, 0.5);
 
-    // Ore sub-type color variation
     if (matId == MAT_ORE) {
         float oreHue = subType / 255.0;
-        col = mix(vec3(0.85, 0.72, 0.20), vec3(0.60, 0.85, 0.45), oreHue * 0.3);
-        col = mix(col, vec3(0.78, 0.78, 0.82), step(128.0, subType) * 0.5);
+        col = mix(vec3(0.90, 0.78, 0.30), vec3(0.65, 0.88, 0.50), oreHue * 0.3);
+        col = mix(col, vec3(0.82, 0.82, 0.88), step(128.0, subType) * 0.5);
     }
     return col;
+}
+
+
+// ============================================================================
+//  SMOOTH MATERIAL COLOR BLENDING
+// ============================================================================
+
+vec3 getBlendedColor(vec2 uv, vec2 worldPos) {
+    vec2 cellPos = uv * uChunkSize - 0.5;
+    vec2 cell0 = floor(cellPos);
+    vec2 f = cellPos - cell0;
+    vec2 t = f * f * (3.0 - 2.0 * f);
+
+    vec4 r00 = texelAtCell(cell0.x,       cell0.y);
+    vec4 r10 = texelAtCell(cell0.x + 1.0, cell0.y);
+    vec4 r01 = texelAtCell(cell0.x,       cell0.y + 1.0);
+    vec4 r11 = texelAtCell(cell0.x + 1.0, cell0.y + 1.0);
+
+    vec3 d00 = decodeCell(r00);
+    vec3 d10 = decodeCell(r10);
+    vec3 d01 = decodeCell(r01);
+    vec3 d11 = decodeCell(r11);
+
+    vec3 c00 = getMatColor(d00.x, worldPos, d00.y);
+    vec3 c10 = getMatColor(d10.x, worldPos, d10.y);
+    vec3 c01 = getMatColor(d01.x, worldPos, d01.y);
+    vec3 c11 = getMatColor(d11.x, worldPos, d11.y);
+
+    vec3 top = mix(c00, c10, t.x);
+    vec3 bot = mix(c01, c11, t.x);
+    return mix(top, bot, t.y);
 }
 
 
@@ -241,93 +247,53 @@ vec3 getMaterialBaseColor(int matId, vec2 worldPos, float subType) {
 
 vec3 applyProceduralTexture(vec3 baseColor, int matId, vec2 worldPos, float sdf) {
     vec3 col = baseColor;
-    float n;
 
-    // Topsoil: organic blobby noise + scattered pebbles
     if (matId == MAT_TOPSOIL) {
-        n = fbm2(worldPos * 3.0) * 0.15;
-        col += n;
+        col += fbm2(worldPos * 3.0) * 0.12;
         float pebble = smoothstep(0.68, 0.72, snoise2(worldPos * 18.0));
-        col = mix(col, col * 0.65, pebble);
+        col = mix(col, col * 0.7, pebble);
     }
-
-    // Sandstone: cross-bedding layers + sand grain scatter
     else if (matId == MAT_SANDSTONE) {
-        n = fbm2(worldPos * 2.5) * 0.12;
-        col += n;
-        float band = sin(worldPos.y * 8.0 + snoise2(worldPos * 1.5) * 2.0) * 0.06;
-        col += band;
-        float grain = smoothstep(0.6, 0.65, snoise2(worldPos * 25.0));
-        col = mix(col, col * 0.7, grain * 0.4);
+        col += fbm2(worldPos * 2.5) * 0.10;
+        col += sin(worldPos.y * 8.0 + snoise2(worldPos * 1.5) * 2.0) * 0.04;
     }
-
-    // Limestone: horizontal bands + fossil speckles
     else if (matId == MAT_LIMESTONE) {
         float bandNoise = snoise2(worldPos * vec2(0.5, 0.1)) * 1.5;
-        float bands = sin(worldPos.y * 12.0 + bandNoise) * 0.08;
-        col += bands;
-        float fossil = smoothstep(0.72, 0.76, snoise2(worldPos * 14.0));
-        col = mix(col, col * 1.15, fossil * 0.3);
+        col += sin(worldPos.y * 12.0 + bandNoise) * 0.06;
     }
-
-    // Shale: thin laminated layers
     else if (matId == MAT_SHALE) {
         float laminate = sin(worldPos.y * 40.0 + snoise2(worldPos * vec2(2.0, 0.5)) * 3.0);
-        laminate = smoothstep(-0.2, 0.2, laminate) * 0.12;
-        col += laminate - 0.06;
-        float fracture = abs(snoise2(worldPos * vec2(1.0, 30.0)));
-        col -= smoothstep(0.92, 0.96, fracture) * 0.15;
+        col += smoothstep(-0.2, 0.2, laminate) * 0.06 - 0.03;
     }
-
-    // Granite: speckled crystalline (quartz, feldspar, mica)
     else if (matId == MAT_GRANITE) {
-        float quartz   = smoothstep(0.5, 0.7, snoise2(worldPos * 12.0));
+        float quartz = smoothstep(0.5, 0.7, snoise2(worldPos * 12.0));
         float feldspar = smoothstep(0.4, 0.6, snoise2(worldPos * 12.0 + 77.7));
-        float mica     = smoothstep(0.7, 0.8, snoise2(worldPos * 20.0 + 155.5));
-        col = mix(col, vec3(0.62, 0.60, 0.58), quartz * 0.3);
-        col = mix(col, vec3(0.55, 0.42, 0.38), feldspar * 0.25);
-        col = mix(col, vec3(0.18, 0.18, 0.16), mica * 0.35);
+        float mica = smoothstep(0.7, 0.8, snoise2(worldPos * 20.0 + 155.5));
+        col = mix(col, vec3(0.60, 0.58, 0.55), quartz * 0.2);
+        col = mix(col, vec3(0.52, 0.42, 0.38), feldspar * 0.15);
+        col = mix(col, vec3(0.22, 0.22, 0.20), mica * 0.25);
     }
-
-    // Basalt: columnar joints + vesicle bubbles
     else if (matId == MAT_BASALT) {
         vec2 bp = worldPos * 6.0;
         float hex = snoise2(bp) + 0.5 * snoise2(bp * 2.0);
         float edge = 1.0 - smoothstep(0.0, 0.15, abs(fract(hex * 2.5) - 0.5));
-        col -= edge * 0.08;
-        float vesicle = smoothstep(0.78, 0.82, snoise2(worldPos * 22.0));
-        col = mix(col, col * 0.7, vesicle * 0.5);
+        col -= edge * 0.05;
     }
-
-    // Obsidian: glassy smooth + conchoidal fractures + iridescence
     else if (matId == MAT_OBSIDIAN) {
-        float sheen = snoise2(worldPos * 1.5) * 0.04;
-        col += sheen;
-        float fracture1 = abs(snoise2(worldPos * vec2(8.0, 3.0) + 42.0));
-        float fracture2 = abs(snoise2(worldPos * vec2(3.0, 9.0) + 91.0));
-        float fracLines = smoothstep(0.90, 0.95, max(fracture1, fracture2));
-        col = mix(col, vec3(0.25, 0.15, 0.35), fracLines * 0.6);
-        float irid = sin(worldPos.x * 20.0 + worldPos.y * 15.0 + uTime * 0.3) * 0.03;
-        col.b += irid;
-        col.r += irid * 0.5;
+        col += snoise2(worldPos * 1.5) * 0.03;
+        float fracLines = smoothstep(0.90, 0.95, abs(snoise2(worldPos * vec2(8.0, 3.0) + 42.0)));
+        col = mix(col, vec3(0.30, 0.18, 0.38), fracLines * 0.4);
     }
-
-    // Mantle Rock: pulsing heat shimmer + magma veins
     else if (matId == MAT_MANTLE) {
-        float heat = fbm3(vec3(worldPos * 2.0, uTime * 0.4)) * 0.15;
-        col += heat;
-        float vein = smoothstep(0.55, 0.65, snoise3(vec3(worldPos * 4.0, uTime * 0.2)));
-        col = mix(col, vec3(0.6, 0.15, 0.02), vein * 0.4);
+        col += fbm3(vec3(worldPos * 2.0, uTime * 0.3)) * 0.10;
+        float vein = smoothstep(0.55, 0.65, snoise3(vec3(worldPos * 4.0, uTime * 0.15)));
+        col = mix(col, vec3(0.6, 0.18, 0.04), vein * 0.3);
     }
-
-    // Hellstone: intense animated heat + cracked ember veins
     else if (matId == MAT_HELLSTONE) {
-        float pulse = fbm3(vec3(worldPos * 1.5, uTime * 0.6)) * 0.12;
-        col += pulse;
-        float crack = smoothstep(0.5, 0.6, snoise3(vec3(worldPos * 5.0, uTime * 0.3)));
-        col = mix(col, vec3(0.8, 0.1, 0.0), crack * 0.5);
-        float glow = smoothstep(-0.3, 0.0, sdf) * 0.15;
-        col += vec3(glow * 0.6, glow * 0.05, 0.0);
+        col += fbm3(vec3(worldPos * 1.5, uTime * 0.4)) * 0.08;
+        float crack = smoothstep(0.5, 0.6, snoise3(vec3(worldPos * 5.0, uTime * 0.2)));
+        col = mix(col, vec3(0.8, 0.12, 0.0), crack * 0.4);
+        col += vec3(smoothstep(-0.3, 0.0, sdf) * 0.10, 0.0, 0.0);
     }
 
     return col;
@@ -339,53 +305,54 @@ vec3 applyProceduralTexture(vec3 baseColor, int matId, vec2 worldPos, float sdf)
 // ============================================================================
 
 float computeAO(float sdf) {
-    return smoothstep(-1.5, 0.0, sdf) * 0.7 + 0.3;
+    return smoothstep(-1.5, 0.0, sdf) * 0.6 + 0.4;
 }
 
 
 // ============================================================================
-//  DYNAMIC LIGHTING
+//  DYNAMIC LIGHTING — brighter, more natural
 // ============================================================================
 
 vec3 computeLighting(vec3 baseColor, vec2 worldPos, vec2 normal, float sdf,
-                     float ao, int matId, int flags, float pixelDepthFeet) {
-    // Depth-based ambient darkening (per-pixel)
-    float depthDark = clamp(1.0 - pixelDepthFeet / 8000.0, 0.15, 1.0);
-    float ambient = 0.08 * depthDark;
+                     float ao, float pixelDepthFeet) {
 
-    // Sky ambient near surface (per-pixel)
-    float skyAmbient = smoothstep(300.0, 0.0, pixelDepthFeet) * 0.35;
+    // --- Depth-based ambient: keep terrain always somewhat visible ---
+    // Near surface: generous daylight. Deep: dimmer but never pitch black.
+    float depthNorm = clamp(pixelDepthFeet / 7000.0, 0.0, 1.0);
+    float ambient = mix(0.35, 0.12, depthNorm);
+
+    // Extra sky ambient near surface
+    float skyAmbient = smoothstep(500.0, -50.0, pixelDepthFeet) * 0.55;
     ambient += skyAmbient;
 
-    // Pod headlight
+    // --- Pod headlight ---
     vec2 toLight = uPodPos - worldPos;
     float dist = length(toLight);
     vec2 lightDir = (dist > 0.001) ? toLight / dist : vec2(0.0, -1.0);
 
-    // Inverse-square attenuation (physically plausible falloff)
-    float atten = 1.0 / (1.0 + dist * dist / (uPodLightRadius * uPodLightRadius));
+    // Smooth inverse-square with generous radius
+    float effectiveRadius = uPodLightRadius * 1.5;
+    float atten = effectiveRadius * effectiveRadius /
+                  (dist * dist + effectiveRadius * effectiveRadius);
 
-    // Diffuse with wrap lighting
+    // Wrap lighting for softer shadows
     float NdotL = max(dot(normal, lightDir), 0.0);
-    float wrap = 0.25;
+    float wrap = 0.35;
     float diffuse = max((NdotL + wrap) / (1.0 + wrap), 0.0);
 
-    // Rim light at glancing angles
-    float rim = pow(1.0 - max(dot(normal, lightDir), 0.0), 3.0) * 0.1 * atten;
+    // Subtle rim light
+    float rim = pow(1.0 - max(dot(normal, lightDir), 0.0), 3.0) * 0.06 * atten;
 
-    // Combined
-    float totalLight = ambient + diffuse * atten * 1.2 + rim;
+    float totalLight = ambient + diffuse * atten * 1.4 + rim;
     totalLight *= ao;
+
+    // Clamp to prevent over-darkening
+    totalLight = max(totalLight, 0.08);
 
     vec3 litColor = baseColor * totalLight;
 
     // Warm headlight tint
     litColor += baseColor * atten * vec3(0.08, 0.06, 0.02) * NdotL;
-
-    // Lava / emissive bypass lighting
-    // flags bit 1 = FLAG_LAVA (value 2): extract via mod(floor(flags/2), 2)
-    float isLavaF = step(0.5, float(matId == MAT_LAVA ? 1 : 0) + mod(floor(float(flags) / 2.0), 2.0));
-    if (isLavaF > 0.5) return baseColor;
 
     return litColor;
 }
@@ -395,19 +362,15 @@ vec3 computeLighting(vec3 baseColor, vec2 worldPos, vec2 normal, float sdf,
 //  ORE SHIMMER
 // ============================================================================
 
-vec3 applyOreShimmer(vec3 col, vec2 worldPos, int matId, int flags) {
-    // flags bit 0 = FLAG_ORE (value 1): extract via mod(flags, 2)
-    float isOreF = step(0.5, float(matId == MAT_ORE ? 1 : 0) + mod(float(flags), 2.0));
-    if (isOreF < 0.5) return col;
+vec3 applyOreShimmer(vec3 col, vec2 worldPos, int matId) {
+    if (matId != MAT_ORE) return col;
 
-    // Multi-frequency shimmer
     float shimmer = sin(uTime * 2.0 + worldPos.x * 10.0 + worldPos.y * 7.0) * 0.5 + 0.5;
     shimmer *= sin(uTime * 3.1 + worldPos.x * 5.5 - worldPos.y * 8.3) * 0.5 + 0.5;
-    shimmer = pow(shimmer, 2.0) * 0.35;
+    shimmer = pow(shimmer, 2.0) * 0.3;
 
-    // Sparkle highlights
     float sparkle = snoise2(worldPos * 30.0 + uTime * 1.5);
-    sparkle = pow(max(sparkle, 0.0), 8.0) * 0.6;
+    sparkle = pow(max(sparkle, 0.0), 8.0) * 0.5;
 
     col += (shimmer + sparkle) * vec3(1.0, 0.9, 0.5);
     return col;
@@ -418,22 +381,18 @@ vec3 applyOreShimmer(vec3 col, vec2 worldPos, int matId, int flags) {
 //  LAVA ANIMATION
 // ============================================================================
 
-vec3 applyLavaEffect(vec3 col, vec2 worldPos, float sdf, int matId, int flags) {
-    float isLavaF = step(0.5, float(matId == MAT_LAVA ? 1 : 0) + mod(floor(float(flags) / 2.0), 2.0));
-    if (isLavaF < 0.5) return col;
+vec3 applyLavaEffect(vec3 col, vec2 worldPos, float sdf, int matId) {
+    if (matId != MAT_LAVA) return col;
 
     vec2 flowUV = worldPos * 2.0 + vec2(uTime * 0.1, uTime * 0.05);
-    float flow = fbm3(vec3(flowUV, uTime * 0.3));
+    float flow = fbm3(vec3(flowUV, uTime * 0.2));
     float pulse = sin(uTime * 1.5 + worldPos.x * 3.0) * 0.15 + 0.85;
 
     float heat = smoothstep(-1.0, -0.1, sdf);
-    vec3 hotColor  = vec3(1.0, 0.65, 0.1) * 1.3;
-    vec3 coolColor = vec3(0.7, 0.12, 0.0);
-    col = mix(coolColor, hotColor, heat * pulse);
+    col = mix(vec3(0.7, 0.12, 0.0), vec3(1.0, 0.65, 0.1) * 1.3, heat * pulse);
 
     float vein = smoothstep(0.3, 0.5, flow) * heat;
-    col = mix(col, vec3(1.0, 0.9, 0.4), vein * 0.5);
-    col *= 1.0 + pulse * 0.2;
+    col = mix(col, vec3(1.0, 0.9, 0.4), vein * 0.4);
 
     return col;
 }
@@ -443,31 +402,20 @@ vec3 applyLavaEffect(vec3 col, vec2 worldPos, float sdf, int matId, int flags) {
 //  PROCEDURAL GRASS
 // ============================================================================
 
-vec3 applyGrass(vec3 currentColor, float currentAlpha, vec2 uv, vec2 worldPos,
-                float sdf, int matId, out float grassAlpha) {
-    grassAlpha = 0.0;
+vec3 applyGrass(vec3 currentColor, vec2 uv, vec2 worldPos, float sdf, int matId) {
     if (matId != MAT_TOPSOIL && matId != MAT_SANDSTONE) return currentColor;
 
     vec2 texelSize = vec2(1.0 / uChunkSize);
     float sdfAbove = sampleSdf(uv - vec2(0.0, texelSize.y));
 
-    // Surface cell: solid here, air above
     float isSurface = step(0.001, sdfAbove) * step(0.001, -sdf);
     if (isSurface < 0.5) return currentColor;
 
-    // Simple grass color blend based on world position noise
     float grassNoise = snoise2(vec2(worldPos.x * 2.0, 0.0)) * 0.5 + 0.5;
-    vec3 grassDark = vec3(0.12, 0.30, 0.06);
-    vec3 grassLight = vec3(0.25, 0.40, 0.10);
-    vec3 grassColor = mix(grassDark, grassLight, grassNoise);
+    vec3 grassColor = mix(vec3(0.15, 0.38, 0.08), vec3(0.30, 0.50, 0.14), grassNoise);
+    grassColor += sin(uTime * 1.2 + worldPos.x * 0.5) * 0.06;
 
-    // Gentle wind sway on color only (no geometry)
-    float wind = sin(uTime * 1.2 + worldPos.x * 0.5) * 0.08;
-    grassColor += wind;
-
-    // Blend grass onto top portion of surface cells
     float surfaceBlend = smoothstep(-0.5, -0.05, sdf) * 0.7;
-    grassAlpha = 0.0; // No alpha extension needed
     return mix(currentColor, grassColor, surfaceBlend * isSurface);
 }
 
@@ -480,68 +428,105 @@ void main() {
     vec2 fragCoord = FlutterFragCoord().xy;
     vec2 uv = fragCoord / uSize;
 
-    // World position of this fragment (in tiles)
     vec2 localTile = uv * uChunkSize;
     vec2 worldPos  = uChunkWorld + localTile;
 
-    // Sample SDF texture
-    vec4 data  = sampleFull(uv);
-    float sdf  = data.x;
-    int matId  = int(data.y);
-    float subType = data.z;
-    int flags  = int(data.w);
+    // --- SDF ---
+    float sdf = sampleSdf(uv);
 
-    // Anti-aliasing: pixel width in SDF space
-    float sdfPerPixel = 4.0 / uSizeX;
-    float aaWidth = sdfPerPixel * 1.5;
+    // --- Material at this cell center ---
+    vec2 cellCoord = floor(uv * uChunkSize);
+    vec4 cellTexel = texelAtCell(cellCoord.x, cellCoord.y);
+    vec3 cellInfo  = decodeCell(cellTexel);
+    int matId      = int(cellInfo.x);
+    float subType  = cellInfo.y;
+    int flags      = int(cellInfo.z);
 
-    // Air: fully transparent (discard not reliable on all Flutter backends)
+    // --- Anti-aliasing ---
+    float tilesPerPixel = 1.0 / max(uScreenScale, 1.0);
+    float sdfPerPixel = tilesPerPixel * (4.0 / uChunkSize);
+    float aaWidth = clamp(sdfPerPixel * 1.5, 0.003, 0.2);
+
     float alpha = smoothstep(aaWidth, -aaWidth, sdf);
     if (alpha < 0.005) {
         fragColor = vec4(0.0);
         return;
     }
 
-    // Surface normal from SDF gradient
+    // Surface normal
     vec2 normal = computeNormal(uv);
 
-    // Base material color
-    vec3 baseColor = getMaterialBaseColor(matId, worldPos, subType);
+    // --- Blended material color ---
+    vec3 baseColor = getBlendedColor(uv, worldPos);
 
     // Procedural texturing
     baseColor = applyProceduralTexture(baseColor, matId, worldPos, sdf);
 
-    // Ambient occlusion
+    // AO
     float ao = computeAO(sdf);
 
-    // Per-pixel depth in feet
+    // Per-pixel depth
     float pixelDepthFeet = worldPos.y * FEET_PER_TILE;
 
-    // Dynamic lighting (per-pixel depth)
-    vec3 litColor = computeLighting(baseColor, worldPos, normal, sdf, ao, matId, flags, pixelDepthFeet);
+    // Lighting
+    vec3 litColor = computeLighting(baseColor, worldPos, normal, sdf, ao, pixelDepthFeet);
+
+    // Lava bypasses lighting (self-illuminated)
+    if (matId == MAT_LAVA) litColor = baseColor;
 
     // Ore shimmer
-    litColor = applyOreShimmer(litColor, worldPos, matId, flags);
+    litColor = applyOreShimmer(litColor, worldPos, matId);
 
     // Lava animation
-    litColor = applyLavaEffect(litColor, worldPos, sdf, matId, flags);
+    litColor = applyLavaEffect(litColor, worldPos, sdf, matId);
 
-    // Procedural grass
-    float grassAlpha;
-    litColor = applyGrass(litColor, alpha, uv, worldPos, sdf, matId, grassAlpha);
-    alpha = max(alpha, grassAlpha);
+    // Grass
+    litColor = applyGrass(litColor, uv, worldPos, sdf, matId);
 
-    // Fog of war: terrain far from pod fades to black
+    // ---- FOG OF WAR ----
+    // Natural exploration reveal: bright near pod, smooth gradient outward.
+    // Uses world-space distance for consistency across zoom levels.
     float distToPod = length(worldPos - uPodPos);
-    float fogOfWar = smoothstep(uPodLightRadius * 2.0, uPodLightRadius * 0.3, distToPod);
-    // Surface terrain (shallow) gets natural light
-    float surfaceLight = smoothstep(200.0, 0.0, pixelDepthFeet);
+
+    // Three-zone fog: bright core -> mid falloff -> dark outer
+    float innerRadius = uPodLightRadius * 0.8;
+    float midRadius   = uPodLightRadius * 2.0;
+    float outerRadius = uPodLightRadius * 4.0;
+
+    // Inner zone: fully lit (1.0)
+    // Mid zone: gradual falloff with smooth curve
+    // Outer zone: fades to a dim ambient
+    float innerFog = 1.0 - smoothstep(0.0, innerRadius, distToPod);
+    float midFog   = (1.0 - smoothstep(innerRadius, midRadius, distToPod)) * 0.6;
+    float outerFog = (1.0 - smoothstep(midRadius, outerRadius, distToPod)) * 0.15;
+
+    float fogOfWar = innerFog + midFog + outerFog;
+
+    // Add a minimum ambient so distant terrain isn't pure black
+    float depthAmbient = mix(0.06, 0.02, clamp(pixelDepthFeet / 7000.0, 0.0, 1.0));
+    fogOfWar = max(fogOfWar, depthAmbient);
+
+    // Surface gets full natural daylight (no fog above ground)
+    float surfaceLight = smoothstep(400.0, -50.0, pixelDepthFeet);
     fogOfWar = max(fogOfWar, surfaceLight);
+
+    // Lava and hellstone glow through fog slightly
+    float selfGlow = 0.0;
+    if (matId == MAT_LAVA) selfGlow = 0.5;
+    else if (matId == MAT_HELLSTONE) selfGlow = 0.08;
+    else if (matId == MAT_MANTLE) selfGlow = 0.05;
+    fogOfWar = max(fogOfWar, selfGlow);
+
     litColor *= fogOfWar;
 
-    // Depth atmosphere tint (deep = cool blue-purple cast, per-pixel)
-    float depthTint = smoothstep(1000.0, 6000.0, pixelDepthFeet);
-    litColor = mix(litColor, litColor * vec3(0.85, 0.80, 0.95), depthTint * 0.25);
+    // Depth atmosphere tint — subtle color shift at extreme depths
+    float depthTint = smoothstep(1500.0, 6000.0, pixelDepthFeet);
+    litColor = mix(litColor, litColor * vec3(0.88, 0.82, 0.98), depthTint * 0.2);
+
+    // Volcanic warm tint
+    float volcanicTint = smoothstep(3000.0, 5000.0, pixelDepthFeet)
+                       * (1.0 - smoothstep(5000.0, 6000.0, pixelDepthFeet));
+    litColor = mix(litColor, litColor * vec3(1.1, 0.9, 0.8), volcanicTint * 0.15);
 
     fragColor = vec4(litColor, alpha);
 }

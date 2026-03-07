@@ -130,7 +130,12 @@ class SdfTextureCache {
   /// Returns null if texture isn't ready yet.
   ui.Image? getTextureSync(Chunk chunk) {
     final key = '${chunk.chunkX},${chunk.chunkY}';
-    if (chunk.isDirty || !_cache.containsKey(key)) {
+    final needsUpdate = chunk.isDirty || !_cache.containsKey(key);
+    if (needsUpdate) {
+      // Clear dirty flag immediately so we don't re-queue every frame
+      if (chunk.isDirty) {
+        chunk.clearDirty();
+      }
       if (!_pending.contains(key)) {
         _pending.add(key);
         _cache.remove(key)?.dispose();

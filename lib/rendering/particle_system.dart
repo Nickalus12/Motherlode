@@ -119,9 +119,12 @@ class ParticleSystem extends Component {
     }
   }
 
+  // Pre-allocated Paint to avoid per-frame allocation
+  final Paint _renderPaint = Paint()..style = PaintingStyle.fill;
+
   @override
   void render(Canvas canvas) {
-    final paint = Paint()..style = PaintingStyle.fill;
+    final paint = _renderPaint;
 
     // Render pooled particles
     for (final p in _pool.activeParticles) {

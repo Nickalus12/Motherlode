@@ -28,22 +28,17 @@ class SdfCollisionSystem extends Component
   /// Maximum penetration correction per frame to avoid jitter.
   static const double _maxPushOut = 0.5;
 
-  /// Extra depth below the physics hull that bottom probes reach into terrain.
-  /// This compensates for the dead-zone so the visual hull sits flush on the surface.
-  static const double _skinWidth = 0.005;
-
   /// Minimum penetration before push-out kicks in (dead-zone to avoid jitter).
-  static const double _deadZone = 0.005;
+  static const double _deadZone = 0.002;
 
   // Probe points relative to pod center (computed once).
-  // Bottom probes extend by _skinWidth below the hull so the visual bottom
-  // lands exactly on the terrain surface after dead-zone settling.
+  // Bottom probes sit at the hull boundary so the pod rests flush on terrain.
   static final List<Vector2> _probeOffsets = [
-    Vector2(0, _podHalfHeight + _skinWidth), // bottom center
-    Vector2(-_podHalfWidth * 0.5, _podHalfHeight + _skinWidth), // bottom mid-left
-    Vector2(_podHalfWidth * 0.5, _podHalfHeight + _skinWidth), // bottom mid-right
-    Vector2(-_podHalfWidth, _podHalfHeight + _skinWidth), // bottom left
-    Vector2(_podHalfWidth, _podHalfHeight + _skinWidth), // bottom right
+    Vector2(0, _podHalfHeight), // bottom center
+    Vector2(-_podHalfWidth * 0.5, _podHalfHeight), // bottom mid-left
+    Vector2(_podHalfWidth * 0.5, _podHalfHeight), // bottom mid-right
+    Vector2(-_podHalfWidth, _podHalfHeight), // bottom left
+    Vector2(_podHalfWidth, _podHalfHeight), // bottom right
     Vector2(-_podHalfWidth, 0), // left center
     Vector2(_podHalfWidth, 0), // right center
     Vector2(-_podHalfWidth, _podHalfHeight * 0.5), // left mid-low

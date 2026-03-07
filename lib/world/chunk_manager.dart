@@ -34,6 +34,16 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
   // Throttle: max chunks to load per frame to avoid jank
   static const int _maxChunkLoadsPerFrame = 2;
 
+  // Throttle: max dirty chunk rebuilds per frame to spread work
+  static const int _maxRebuildsPerFrame = 2;
+
+  // Cached pod chunk position to skip recalculation when pod hasn't crossed a chunk boundary
+  int _lastPodChunkX = -999999;
+  int _lastPodChunkY = -999999;
+
+  // Pre-computed set of needed chunk keys (only recomputed on chunk boundary crossing)
+  final Set<String> _neededChunks = {};
+
   ChunkManager({
     required this.worldGenerator,
     required MotherlodeGame game,
@@ -60,23 +70,27 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
     final podChunkX = (podPos.x / GameConstants.chunkSize).floor();
     final podChunkY = (podPos.y / GameConstants.chunkSize).floor();
 
-    // Determine which chunks should be loaded
-    final neededChunks = <String>{};
-    for (int dy = -GameConstants.chunkLoadRadius;
-        dy <= GameConstants.chunkLoadRadius;
-        dy++) {
-      for (int dx = -GameConstants.chunkLoadRadius;
-          dx <= GameConstants.chunkLoadRadius;
-          dx++) {
-        final cx = podChunkX + dx;
-        final cy = podChunkY + dy;
-        neededChunks.add(_chunkKey(cx, cy));
+    // Only recompute needed chunks when pod crosses a chunk boundary
+    final chunkChanged =
+        podChunkX != _lastPodChunkX || podChunkY != _lastPodChunkY;
+    if (chunkChanged) {
+      _lastPodChunkX = podChunkX;
+      _lastPodChunkY = podChunkY;
+      _neededChunks.clear();
+      for (int dy = -GameConstants.chunkLoadRadius;
+          dy <= GameConstants.chunkLoadRadius;
+          dy++) {
+        for (int dx = -GameConstants.chunkLoadRadius;
+            dx <= GameConstants.chunkLoadRadius;
+            dx++) {
+          _neededChunks.add(_chunkKey(podChunkX + dx, podChunkY + dy));
+        }
       }
     }
 
     // Load new chunks (throttled to avoid frame jank)
     int chunksLoaded = 0;
-    for (final key in neededChunks) {
+    for (final key in _neededChunks) {
       if (!_activeChunks.containsKey(key)) {
         if (chunksLoaded >= _maxChunkLoadsPerFrame) break;
         _loadChunk(key);
@@ -84,30 +98,35 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
       }
     }
 
-    // Unload distant chunks
-    final chunksToRemove = <String>[];
-    for (final entry in _activeChunks.entries) {
-      if (!neededChunks.contains(entry.key)) {
-        final parts = entry.key.split(',');
-        final cx = int.parse(parts[0]);
-        final cy = int.parse(parts[1]);
-        final dist = (cx - podChunkX).abs() + (cy - podChunkY).abs();
-        if (dist > GameConstants.chunkUnloadRadius) {
-          chunksToRemove.add(entry.key);
+    // Unload distant chunks (only check when pod moved to a new chunk)
+    if (chunkChanged) {
+      final chunksToRemove = <String>[];
+      for (final entry in _activeChunks.entries) {
+        if (!_neededChunks.contains(entry.key)) {
+          // Use chunk's stored coords instead of parsing the key string
+          final chunk = entry.value;
+          final dist = (chunk.chunkX - podChunkX).abs() +
+              (chunk.chunkY - podChunkY).abs();
+          if (dist > GameConstants.chunkUnloadRadius) {
+            chunksToRemove.add(entry.key);
+          }
         }
+      }
+
+      for (final key in chunksToRemove) {
+        _unloadChunk(key);
       }
     }
 
-    for (final key in chunksToRemove) {
-      _unloadChunk(key);
-    }
-
-    // Rebuild dirty chunks with border data from neighbors
+    // Rebuild dirty chunks with border data from neighbors (throttled)
+    int rebuilds = 0;
     for (final chunk in _activeChunks.values) {
       if (chunk.isDirty) {
+        if (rebuilds >= _maxRebuildsPerFrame) break;
         _updateBorderData(chunk);
         chunk.rebuild();
         chunk.rebuildCollision();
+        rebuilds++;
       }
     }
   }
@@ -246,19 +265,10 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
 
   /// Remove a cell at world grid coordinates
   void removeCell(int gridX, int gridY) {
-    final chunkX = gridX >= 0
-        ? gridX ~/ GameConstants.chunkSize
-        : -(((-gridX - 1) ~/ GameConstants.chunkSize) + 1);
-    final chunkY = gridY >= 0
-        ? gridY ~/ GameConstants.chunkSize
-        : -(((-gridY - 1) ~/ GameConstants.chunkSize) + 1);
-
-    final localX =
-        ((gridX % GameConstants.chunkSize) + GameConstants.chunkSize) %
-            GameConstants.chunkSize;
-    final localY =
-        ((gridY % GameConstants.chunkSize) + GameConstants.chunkSize) %
-            GameConstants.chunkSize;
+    final chunkX = _worldToChunk(gridX);
+    final chunkY = _worldToChunk(gridY);
+    final localX = _worldToLocal(gridX);
+    final localY = _worldToLocal(gridY);
 
     final key = _chunkKey(chunkX, chunkY);
     _modifiedChunks.add(key);
@@ -287,19 +297,10 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
   /// Mark a cell's chunk as dirty (SDF was modified externally).
   /// Does not clear the cell -- just triggers visual/physics rebuild.
   void markCellDirty(int gridX, int gridY) {
-    final chunkX = gridX >= 0
-        ? gridX ~/ GameConstants.chunkSize
-        : -(((-gridX - 1) ~/ GameConstants.chunkSize) + 1);
-    final chunkY = gridY >= 0
-        ? gridY ~/ GameConstants.chunkSize
-        : -(((-gridY - 1) ~/ GameConstants.chunkSize) + 1);
-
-    final localX =
-        ((gridX % GameConstants.chunkSize) + GameConstants.chunkSize) %
-            GameConstants.chunkSize;
-    final localY =
-        ((gridY % GameConstants.chunkSize) + GameConstants.chunkSize) %
-            GameConstants.chunkSize;
+    final chunkX = _worldToChunk(gridX);
+    final chunkY = _worldToChunk(gridY);
+    final localX = _worldToLocal(gridX);
+    final localY = _worldToLocal(gridY);
 
     final key = _chunkKey(chunkX, chunkY);
     final chunk = _activeChunks[key];
@@ -370,21 +371,13 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
           modified.add((gx, gy, cell));
 
           // Track which chunks need rebuild
-          final chunkX = gx >= 0
-              ? gx ~/ GameConstants.chunkSize
-              : -(((-gx - 1) ~/ GameConstants.chunkSize) + 1);
-          final chunkY = gy >= 0
-              ? gy ~/ GameConstants.chunkSize
-              : -(((-gy - 1) ~/ GameConstants.chunkSize) + 1);
+          final chunkX = _worldToChunk(gx);
+          final chunkY = _worldToChunk(gy);
           dirtyChunks.add(_chunkKey(chunkX, chunkY));
 
           // Border cells also dirty the neighbor
-          final localX =
-              ((gx % GameConstants.chunkSize) + GameConstants.chunkSize) %
-                  GameConstants.chunkSize;
-          final localY =
-              ((gy % GameConstants.chunkSize) + GameConstants.chunkSize) %
-                  GameConstants.chunkSize;
+          final localX = _worldToLocal(gx);
+          final localY = _worldToLocal(gy);
           if (localX == 0 ||
               localX == GameConstants.chunkSize - 1 ||
               localY == 0 ||
@@ -404,21 +397,25 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
     return modified;
   }
 
+  /// Convert world grid coordinate to chunk coordinate.
+  static int _worldToChunk(int grid) {
+    return grid >= 0
+        ? grid ~/ GameConstants.chunkSize
+        : -(((-grid - 1) ~/ GameConstants.chunkSize) + 1);
+  }
+
+  /// Convert world grid coordinate to local-in-chunk coordinate.
+  static int _worldToLocal(int grid) {
+    return ((grid % GameConstants.chunkSize) + GameConstants.chunkSize) %
+        GameConstants.chunkSize;
+  }
+
   /// Get cell type at world grid coordinates
   int getCellType(int gridX, int gridY) {
-    final chunkX = gridX >= 0
-        ? gridX ~/ GameConstants.chunkSize
-        : -(((-gridX - 1) ~/ GameConstants.chunkSize) + 1);
-    final chunkY = gridY >= 0
-        ? gridY ~/ GameConstants.chunkSize
-        : -(((-gridY - 1) ~/ GameConstants.chunkSize) + 1);
-
-    final localX =
-        ((gridX % GameConstants.chunkSize) + GameConstants.chunkSize) %
-            GameConstants.chunkSize;
-    final localY =
-        ((gridY % GameConstants.chunkSize) + GameConstants.chunkSize) %
-            GameConstants.chunkSize;
+    final chunkX = _worldToChunk(gridX);
+    final chunkY = _worldToChunk(gridY);
+    final localX = _worldToLocal(gridX);
+    final localY = _worldToLocal(gridY);
 
     final key = _chunkKey(chunkX, chunkY);
     final chunk = _activeChunks[key];
@@ -439,19 +436,10 @@ class ChunkManager extends Component with HasGameReference<MotherlodeGame> {
 
   /// Get the terrain cell at world grid coordinates
   TerrainCell? getTerrainCell(int gridX, int gridY) {
-    final chunkX = gridX >= 0
-        ? gridX ~/ GameConstants.chunkSize
-        : -(((-gridX - 1) ~/ GameConstants.chunkSize) + 1);
-    final chunkY = gridY >= 0
-        ? gridY ~/ GameConstants.chunkSize
-        : -(((-gridY - 1) ~/ GameConstants.chunkSize) + 1);
-
-    final localX =
-        ((gridX % GameConstants.chunkSize) + GameConstants.chunkSize) %
-            GameConstants.chunkSize;
-    final localY =
-        ((gridY % GameConstants.chunkSize) + GameConstants.chunkSize) %
-            GameConstants.chunkSize;
+    final chunkX = _worldToChunk(gridX);
+    final chunkY = _worldToChunk(gridY);
+    final localX = _worldToLocal(gridX);
+    final localY = _worldToLocal(gridY);
 
     final key = _chunkKey(chunkX, chunkY);
     final chunk = _activeChunks[key];

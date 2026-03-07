@@ -9,9 +9,9 @@ out vec4 fragColor;
 // All procedural — no texture dependencies.
 // ============================================================================
 
-// --- Uniforms (Flutter: sequential float indices, no samplers) --------------
-uniform float uSizeX;          // index 0 - viewport width pixels
-uniform float uSizeY;          // index 1 - viewport height pixels
+// --- Uniforms ----------------------------------------------------------------
+uniform float uSizeX;          // index 0 - viewport width in world units
+uniform float uSizeY;          // index 1 - viewport height in world units
 uniform float uCameraPosX;     // index 2 - camera world X in tiles
 uniform float uCameraPosY;     // index 3 - camera world Y in tiles
 uniform float uDepthFeet;      // index 4 - camera depth in feet
@@ -20,12 +20,10 @@ uniform float uPodPosX;        // index 6 - pod world X
 uniform float uPodPosY;        // index 7 - pod world Y
 uniform float uPodLightRadius; // index 8 - pod light radius in tiles
 
-// --- Derived convenience ---
 #define uSize      vec2(uSizeX, uSizeY)
 #define uCameraPos vec2(uCameraPosX, uCameraPosY)
 #define uPodPos    vec2(uPodPosX, uPodPosY)
 
-// --- Constants --------------------------------------------------------------
 const float PI  = 3.14159265359;
 const float TAU = 6.28318530718;
 
@@ -36,7 +34,7 @@ const float ROCK_END      = 3000.0;
 const float VOLCANIC_END  = 5000.0;
 const float HELL_START    = 5000.0;
 const float MAX_DEPTH     = 7500.0;
-const float SKY_FADE_DEPTH = 300.0;
+const float SKY_FADE_DEPTH = 350.0;
 
 
 // ============================================================================
@@ -49,7 +47,6 @@ vec4 mod289_4(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
 vec3 permute3(vec3 x) { return mod289_3(((x * 34.0) + 10.0) * x); }
 vec4 permute4(vec4 x) { return mod289_4(((x * 34.0) + 10.0) * x); }
 
-// 2D Simplex Noise
 float snoise2(vec2 v) {
     const vec4 C = vec4(0.211324865405187, 0.366025403784439,
                        -0.577350269189626, 0.024390243902439);
@@ -76,7 +73,6 @@ float snoise2(vec2 v) {
     return 130.0 * dot(m, g);
 }
 
-// 3D Simplex Noise
 float snoise3(vec3 v) {
     const vec2 C = vec2(1.0 / 6.0, 1.0 / 3.0);
     const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
@@ -178,23 +174,27 @@ float zoneWeight(float depth, float zStart, float zEnd) {
 
 
 // ============================================================================
-//  COLOR PALETTES
+//  COLOR PALETTES — brighter, more atmospheric cave colors
 // ============================================================================
 
-vec3 skyColorTop()       { return vec3(0.247, 0.463, 0.682); }
-vec3 skyColorBottom()    { return vec3(0.529, 0.808, 0.922); }
+vec3 skyColorTop()       { return vec3(0.30, 0.52, 0.78); }
+vec3 skyColorBottom()    { return vec3(0.58, 0.82, 0.95); }
 
-vec3 shallowCaveDark()   { return vec3(0.098, 0.067, 0.039); }
-vec3 shallowCaveLight()  { return vec3(0.141, 0.098, 0.059); }
+// Shallow caves: warm earth tones, visible
+vec3 shallowCaveDark()   { return vec3(0.18, 0.14, 0.10); }
+vec3 shallowCaveLight()  { return vec3(0.28, 0.22, 0.16); }
 
-vec3 rockCaveDark()      { return vec3(0.059, 0.059, 0.071); }
-vec3 rockCaveLight()     { return vec3(0.118, 0.118, 0.133); }
+// Rock caves: cool blue-gray, like real limestone caves
+vec3 rockCaveDark()      { return vec3(0.14, 0.15, 0.20); }
+vec3 rockCaveLight()     { return vec3(0.24, 0.25, 0.30); }
 
-vec3 volcanicDark()      { return vec3(0.078, 0.020, 0.010); }
-vec3 volcanicLight()     { return vec3(0.157, 0.039, 0.020); }
+// Volcanic: warm orange-red glow
+vec3 volcanicDark()      { return vec3(0.16, 0.06, 0.03); }
+vec3 volcanicLight()     { return vec3(0.30, 0.12, 0.06); }
 
-vec3 hellDark()          { return vec3(0.020, 0.000, 0.000); }
-vec3 hellLight()         { return vec3(0.059, 0.008, 0.008); }
+// Hell: deep crimson atmosphere
+vec3 hellDark()          { return vec3(0.08, 0.02, 0.02); }
+vec3 hellLight()         { return vec3(0.18, 0.05, 0.04); }
 
 vec3 getBiomeColor(float depth, float screenY01) {
     float vt = screenY01;
@@ -228,35 +228,26 @@ vec3 getBiomeColor(float depth, float screenY01) {
 
 
 // ============================================================================
-//  SKY SYSTEM (surface zone)
+//  SKY SYSTEM
 // ============================================================================
 
 vec3 renderSky(vec2 uv, vec2 worldPos) {
-    // Sky gradient
+    // Sky gradient — richer blue
     vec3 sky = mix(skyColorBottom(), skyColorTop(), uv.y);
 
     // Warm horizon band
     float horizonBand = exp(-pow((uv.y - 0.85) * 4.0, 2.0));
-    sky = mix(sky, vec3(0.95, 0.7, 0.45), horizonBand * 0.35);
+    sky = mix(sky, vec3(0.95, 0.75, 0.50), horizonBand * 0.35);
 
-    // Sun
-    vec2 sunPos = vec2(0.65, 0.25) + uCameraPos * 0.00005;
+    // Sun glow — soft, warm
+    vec2 sunPos = vec2(0.65, 0.22) + uCameraPos * 0.00005;
     float sunDist = length(uv - sunPos);
 
-    float outerGlow = exp(-sunDist * 3.0) * 0.3;
-    sky += vec3(1.0, 0.9, 0.5) * outerGlow;
+    float outerGlow = exp(-sunDist * 3.5) * 0.25;
+    sky += vec3(1.0, 0.94, 0.65) * outerGlow;
 
-    float mainGlow = exp(-sunDist * 8.0) * 0.6;
-    sky += vec3(1.0, 0.95, 0.7) * mainGlow;
-
-    float sunDisc = smoothstep(0.035, 0.025, sunDist);
-    sky = mix(sky, vec3(1.0, 0.98, 0.9), sunDisc);
-
-    // Lens flare rays
-    float angle = atan(uv.y - sunPos.y, uv.x - sunPos.x);
-    float rays = pow(abs(sin(angle * 8.0 + uTime * 0.1)), 16.0);
-    float rayFalloff = exp(-sunDist * 5.0) * 0.15;
-    sky += vec3(1.0, 0.9, 0.6) * rays * rayFalloff;
+    float coreGlow = exp(-sunDist * 14.0) * 0.5;
+    sky += vec3(1.0, 0.97, 0.85) * coreGlow;
 
     // Cloud layer 1: high wispy
     vec2 cloudOffset = uCameraPos * 0.0001;
@@ -268,7 +259,7 @@ vec3 renderSky(vec2 uv, vec2 worldPos) {
     cloud1 *= cloudMask1;
 
     float cloudShadeY = fbm2(cp1 * 1.5 + vec2(0.0, 0.3), 3);
-    vec3 cloudColor1 = mix(vec3(0.75, 0.78, 0.85), vec3(1.0, 1.0, 1.0),
+    vec3 cloudColor1 = mix(vec3(0.80, 0.82, 0.88), vec3(1.0, 1.0, 1.0),
                            smoothstep(-0.2, 0.3, cloudShadeY));
     sky = mix(sky, cloudColor1, cloud1 * 0.7);
 
@@ -281,9 +272,9 @@ vec3 renderSky(vec2 uv, vec2 worldPos) {
     cloud2 *= cloudMask2;
 
     float cloudShade2 = fbm2(cp2 * 1.2 + vec2(0.0, 0.5), 3);
-    vec3 cloudColor2 = mix(vec3(0.7, 0.72, 0.8), vec3(0.98, 0.98, 1.0),
+    vec3 cloudColor2 = mix(vec3(0.74, 0.76, 0.84), vec3(0.98, 0.98, 1.0),
                            smoothstep(-0.3, 0.2, cloudShade2));
-    float bottomShade = smoothstep(0.55, 0.75, uv.y) * 0.15;
+    float bottomShade = smoothstep(0.55, 0.75, uv.y) * 0.12;
     cloudColor2 -= vec3(bottomShade);
     sky = mix(sky, cloudColor2, cloud2 * 0.65);
 
@@ -292,7 +283,7 @@ vec3 renderSky(vec2 uv, vec2 worldPos) {
 
 
 // ============================================================================
-//  PARALLAX CAVE WALL SILHOUETTES (4 layers)
+//  PARALLAX CAVE WALL SILHOUETTES
 // ============================================================================
 
 float caveWallLayer(vec2 worldPos, float parallaxRate, float layerSeed, float ceiling) {
@@ -302,7 +293,6 @@ float caveWallLayer(vec2 worldPos, float parallaxRate, float layerSeed, float ce
     vec2 noiseCoord = p * vec2(0.003, 0.008) + vec2(layerSeed * 17.3, layerSeed * 7.1);
     float wall = fbm2(noiseCoord, 3);
 
-    // ceiling > 0.5 = ceiling spikes, otherwise floor bumps
     float spikes = fbm2(noiseCoord * vec2(3.0, 1.0) + 100.0, 3);
     float bumps = fbm2(noiseCoord * vec2(2.5, 1.5) + 200.0, 3);
     wall += mix(max(0.0, bumps) * 0.3, max(0.0, spikes) * 0.4, ceiling);
@@ -315,29 +305,30 @@ vec3 renderCaveWalls(vec2 uv, vec2 worldPos, float depth, vec3 baseColor) {
 
     for (int i = 0; i < 4; i++) {
         float rate = (i == 0) ? 0.1 : (i == 1) ? 0.2 : (i == 2) ? 0.4 : 0.6;
-        float darkness = (i == 0) ? 0.08 : (i == 1) ? 0.12 : (i == 2) ? 0.18 : 0.25;
+        // Subtler darkening — don't crush blacks
+        float darkness = (i == 0) ? 0.06 : (i == 1) ? 0.10 : (i == 2) ? 0.14 : 0.20;
         float seed = float(i);
 
         // Ceiling silhouette
         float ceiling = caveWallLayer(worldPos, rate, seed, 1.0);
         float ceilMask = smoothstep(0.2, 0.5, ceiling) * smoothstep(0.35, 0.0, uv.y);
-        vec3 ceilColor = baseColor * (1.0 - darkness * 2.0);
-        col = mix(col, ceilColor, ceilMask * 0.6);
+        vec3 ceilColor = baseColor * (1.0 - darkness * 1.5);
+        col = mix(col, ceilColor, ceilMask * 0.5);
 
         // Floor silhouette
         float floorN = caveWallLayer(worldPos, rate, seed + 10.0, 0.0);
         float floorMask = smoothstep(0.2, 0.5, floorN) * smoothstep(0.65, 1.0, uv.y);
-        vec3 floorColor = baseColor * (1.0 - darkness * 1.8);
-        col = mix(col, floorColor, floorMask * 0.5);
+        vec3 floorColor = baseColor * (1.0 - darkness * 1.3);
+        col = mix(col, floorColor, floorMask * 0.4);
 
         // Side walls
         float sideL = caveWallLayer(worldPos + vec2(0.0, 50.0), rate, seed + 20.0, 0.0);
         float sideLMask = smoothstep(0.15, 0.45, sideL) * smoothstep(0.2, 0.0, uv.x);
-        col = mix(col, baseColor * (1.0 - darkness * 1.5), sideLMask * 0.4);
+        col = mix(col, baseColor * (1.0 - darkness * 1.2), sideLMask * 0.35);
 
         float sideR = caveWallLayer(worldPos + vec2(0.0, -50.0), rate, seed + 30.0, 0.0);
         float sideRMask = smoothstep(0.15, 0.45, sideR) * smoothstep(0.8, 1.0, uv.x);
-        col = mix(col, baseColor * (1.0 - darkness * 1.5), sideRMask * 0.4);
+        col = mix(col, baseColor * (1.0 - darkness * 1.2), sideRMask * 0.35);
     }
 
     return col;
@@ -362,15 +353,12 @@ vec3 renderParticles(vec2 uv, vec2 worldPos, float depth) {
         vec2 pPos;
 
         if (depth < TOPSOIL_END) {
-            // Dust motes: gentle floating
             pPos.x = fract(h1 + uTime * 0.01 * (h3 - 0.5));
             pPos.y = fract(h2 + uTime * 0.005 * speed);
         } else if (depth < VOLCANIC_END) {
-            // Embers: rise upward with lateral drift
             pPos.x = fract(h1 + sin(uTime * 0.3 + id) * 0.05);
             pPos.y = fract(h2 - uTime * 0.02 * speed);
         } else {
-            // Hellfire sparks: erratic motion
             pPos.x = fract(h1 + sin(uTime * 0.8 + id * 2.0) * 0.08);
             pPos.y = fract(h2 - uTime * 0.03 * speed + sin(uTime + id) * 0.02);
         }
@@ -383,16 +371,16 @@ vec3 renderParticles(vec2 uv, vec2 worldPos, float depth) {
 
         vec3 pColor;
         if (depth < TOPSOIL_END) {
-            pColor = vec3(0.8, 0.75, 0.6) * (0.3 + 0.7 * flicker);
-            brightness *= 0.4;
+            pColor = vec3(0.85, 0.80, 0.65) * (0.3 + 0.7 * flicker);
+            brightness *= 0.5;
         } else if (depth < ROCK_END) {
-            pColor = vec3(0.6, 0.7, 0.9) * (0.4 + 0.6 * flicker);
-            brightness *= 0.35;
+            pColor = vec3(0.65, 0.75, 0.95) * (0.4 + 0.6 * flicker);
+            brightness *= 0.45;
         } else if (depth < VOLCANIC_END) {
-            pColor = vec3(1.0, 0.4 + flicker * 0.3, 0.0) * (0.5 + 0.5 * flicker);
+            pColor = vec3(1.0, 0.45 + flicker * 0.3, 0.05) * (0.5 + 0.5 * flicker);
             brightness *= 0.7;
         } else {
-            pColor = mix(vec3(1.0, 0.1, 0.0), vec3(0.6, 0.0, 0.8), h1);
+            pColor = mix(vec3(1.0, 0.15, 0.0), vec3(0.65, 0.05, 0.8), h1);
             pColor *= (0.4 + 0.6 * flicker);
             brightness *= 0.8;
         }
@@ -435,14 +423,14 @@ vec3 renderWaterDrips(vec2 uv, vec2 worldPos, float depth) {
         float head = smoothstep(0.004, 0.001, headDist);
 
         float alpha = (streak + head) * (1.0 - cycle) * dripIntensity;
-        drips += vec3(0.5, 0.65, 0.9) * alpha * 0.3;
+        drips += vec3(0.55, 0.70, 0.95) * alpha * 0.35;
 
         if (cycle > 0.85) {
             float splashT = (cycle - 0.85) / 0.15;
             float splashR = 0.005 + splashT * 0.02;
             float splashDist = length(uv - vec2(dripX, h2 * 0.3 + 0.7));
             float splash = smoothstep(splashR, splashR * 0.5, splashDist) * (1.0 - splashT);
-            drips += vec3(0.5, 0.65, 0.9) * splash * 0.2;
+            drips += vec3(0.55, 0.70, 0.95) * splash * 0.25;
         }
     }
 
@@ -451,49 +439,40 @@ vec3 renderWaterDrips(vec2 uv, vec2 worldPos, float depth) {
 
 
 // ============================================================================
-//  VOLUMETRIC HEADLIGHT SCATTERING
+//  VOLUMETRIC HEADLIGHT — world-space for consistency with terrain fog
 // ============================================================================
 
-vec3 renderHeadlight(vec2 uv, vec2 worldPos, float depth) {
+vec3 renderHeadlight(vec2 worldPos, float depth) {
     if (depth < 50.0) return vec3(0.0);
 
-    // Pod position in approximate screen space
-    vec2 podScreenPos = (uPodPos - uCameraPos) / uSize + 0.5;
+    // Distance from this pixel to the pod in world space
+    vec2 toLight = worldPos - uPodPos;
+    float dist = length(toLight);
 
-    vec2 toLightDir = uv - podScreenPos;
-    float distToLight = length(toLightDir);
+    // Use the same radii as terrain fog for visual coherence
+    float innerR = uPodLightRadius * 0.8;
+    float outerR = uPodLightRadius * 2.5;
 
-    float lightR = uPodLightRadius / max(uSizeX, uSizeY);
+    // Soft radial glow
+    float glow = 1.0 - smoothstep(0.0, outerR, dist);
+    glow = glow * glow; // quadratic falloff
 
-    // Radial falloff
-    float falloff = 1.0 - smoothstep(0.0, lightR, distToLight);
-    falloff = pow(falloff, 1.5);
+    // Bright core
+    float core = 1.0 - smoothstep(0.0, innerR, dist);
+    core = core * core * core;
 
-    // Dust density by zone
-    float dustDensity;
-    if (depth < TOPSOIL_END) dustDensity = 0.8;
-    else if (depth < ROCK_END) dustDensity = 0.4;
-    else if (depth < VOLCANIC_END) dustDensity = 0.6;
-    else dustDensity = 0.5;
+    // Directional rays (subtle)
+    float angle = atan(toLight.y, toLight.x);
+    float rayNoise = fbm2(vec2(angle * 4.0, dist * 0.3 - uTime * 0.3), 3);
+    float rays = smoothstep(-0.1, 0.3, rayNoise) * 0.15 * glow;
 
-    // Light scattering through dust
-    vec2 lightDir = normalize(toLightDir + vec2(0.001));
-    float scatter = pow(max(dot(lightDir, vec2(0.0, -1.0)), 0.0), 4.0) * dustDensity;
+    float intensity = (glow * 0.25 + core * 0.35 + rays);
 
-    // Volumetric rays
-    float rayNoise = fbm2(vec2(atan(toLightDir.y, toLightDir.x) * 3.0,
-                                distToLight * 20.0 - uTime * 0.5), 3);
-    float rays = smoothstep(-0.1, 0.3, rayNoise) * 0.3;
-
-    float intensity = (falloff + scatter * 0.3 + rays * falloff) * 0.35;
-
-    // Warm white light
-    vec3 lightColor = vec3(1.0, 0.95, 0.8);
-
-    // Amber tint in volcanic/hell zones
+    // Light color: warm white, shifts amber in volcanic zones
+    vec3 lightColor = vec3(1.0, 0.95, 0.82);
     if (depth > ROCK_END) {
         float hellBlend = smoothstep(ROCK_END, VOLCANIC_END, depth);
-        lightColor = mix(lightColor, vec3(1.0, 0.7, 0.4), hellBlend * 0.4);
+        lightColor = mix(lightColor, vec3(1.0, 0.75, 0.45), hellBlend * 0.4);
     }
 
     return lightColor * intensity;
@@ -512,7 +491,7 @@ vec3 renderVolcanicEffects(vec2 uv, vec2 worldPos, float depth) {
 
     if (volcanicWeight <= 0.0 && hellWeight <= 0.0) return fx;
 
-    // Distant lava rivers (horizontal pulsing bands)
+    // Distant lava rivers
     if (volcanicWeight > 0.0 || hellWeight > 0.0) {
         float lavaY = worldPos.y * 0.005;
         for (int i = 0; i < 4; i++) {
@@ -526,12 +505,12 @@ vec3 renderVolcanicEffects(vec2 uv, vec2 worldPos, float depth) {
             band *= smoothstep(-0.2, 0.3, flow);
 
             float pulse = 0.6 + 0.4 * sin(uTime * (0.5 + hash11(id) * 0.5) + id * 2.0);
-            vec3 lavaColor = mix(vec3(0.8, 0.2, 0.0), vec3(1.0, 0.6, 0.1), pulse);
+            vec3 lavaColor = mix(vec3(0.85, 0.25, 0.0), vec3(1.0, 0.65, 0.15), pulse);
             fx += lavaColor * band * 0.4 * max(volcanicWeight, hellWeight);
         }
     }
 
-    // Heat distortion
+    // Heat shimmer
     if (volcanicWeight > 0.0) {
         float shimmer = sin(uv.y * 80.0 + uTime * 3.0 + worldPos.x * 0.1) * 0.003;
         float shimmer2 = sin(uv.x * 60.0 + uTime * 2.5 + worldPos.y * 0.08) * 0.002;
@@ -558,21 +537,21 @@ vec3 renderVolcanicEffects(vec2 uv, vec2 worldPos, float depth) {
                 float colFade = 1.0 - smoothstep(0.0, colWidth, colDist);
                 flame *= colFade;
 
-                vec3 flameColor = mix(vec3(1.0, 0.3, 0.05), vec3(1.0, 0.8, 0.3), flame);
-                flameColor = mix(flameColor, vec3(0.6, 0.1, 0.5), 0.15);
+                vec3 flameColor = mix(vec3(1.0, 0.35, 0.08), vec3(1.0, 0.85, 0.35), flame);
+                flameColor = mix(flameColor, vec3(0.65, 0.15, 0.5), 0.12);
 
                 fx += flameColor * flame * hellWeight * 0.3;
             }
         }
 
-        // Deep red pulse
+        // Deep red ambient pulse
         float hellPulse = 0.5 + 0.5 * sin(uTime * 0.8 + worldPos.y * 0.001);
-        fx += vec3(0.15, 0.0, 0.0) * hellPulse * hellWeight;
+        fx += vec3(0.18, 0.02, 0.02) * hellPulse * hellWeight;
 
-        // Supernatural glow from below
+        // Glow from below
         float supernaturalGlow = smoothstep(0.3, 1.0, uv.y) * hellWeight;
         float glowPulse = 0.5 + 0.5 * sin(uTime * 0.4 + 1.7);
-        fx += vec3(0.1, 0.0, 0.02) * supernaturalGlow * glowPulse;
+        fx += vec3(0.12, 0.02, 0.03) * supernaturalGlow * glowPulse;
     }
 
     return fx;
@@ -580,19 +559,19 @@ vec3 renderVolcanicEffects(vec2 uv, vec2 worldPos, float depth) {
 
 
 // ============================================================================
-//  DEPTH FOG
+//  DEPTH FOG — gentler, more atmospheric
 // ============================================================================
 
 vec3 applyDepthFog(vec3 color, float depth) {
-    float fogDensity = smoothstep(200.0, 3000.0, depth) * 0.4
-                     + smoothstep(3000.0, 6000.0, depth) * 0.3;
-    fogDensity = clamp(fogDensity, 0.0, 0.7);
+    float fogDensity = smoothstep(800.0, 4500.0, depth) * 0.20
+                     + smoothstep(4500.0, 7000.0, depth) * 0.15;
+    fogDensity = clamp(fogDensity, 0.0, 0.35);
 
     vec3 fogColor;
-    if (depth < TOPSOIL_END) fogColor = vec3(0.08, 0.06, 0.04);
-    else if (depth < ROCK_END) fogColor = vec3(0.05, 0.05, 0.06);
-    else if (depth < VOLCANIC_END) fogColor = vec3(0.08, 0.02, 0.01);
-    else fogColor = vec3(0.04, 0.0, 0.0);
+    if (depth < TOPSOIL_END) fogColor = vec3(0.10, 0.08, 0.06);
+    else if (depth < ROCK_END) fogColor = vec3(0.08, 0.08, 0.10);
+    else if (depth < VOLCANIC_END) fogColor = vec3(0.10, 0.04, 0.02);
+    else fogColor = vec3(0.06, 0.01, 0.01);
 
     return mix(color, fogColor, fogDensity);
 }
@@ -611,12 +590,12 @@ void main() {
 
     float depth = uDepthFeet;
 
-    // Sky vs underground blend
+    // Sky vs underground blend — smoother transition
     float skyBlend = 1.0 - smoothstep(0.0, SKY_FADE_DEPTH, depth);
 
     vec3 finalColor = vec3(0.0);
 
-    // Sky (visible near surface, fades by 300ft)
+    // Sky (visible near surface)
     if (skyBlend > 0.001) {
         vec3 sky = renderSky(uv, worldPos);
         finalColor += sky * skyBlend;
@@ -627,40 +606,72 @@ void main() {
 
     if (undergroundBlend > 0.001) {
         vec3 caveColor = getBiomeColor(depth, uv.y);
+
+        // Add procedural texture to cave background
+        float caveTex = fbm2(worldPos * 0.001 + vec2(depth * 0.0003, 0.0), 3) * 0.08;
+        caveColor += caveTex;
+
         caveColor = renderCaveWalls(uv, worldPos, depth, caveColor);
         caveColor += renderWaterDrips(uv, worldPos, depth);
         caveColor += renderParticles(uv, worldPos, depth);
         caveColor += renderVolcanicEffects(uv, worldPos, depth);
         caveColor = applyDepthFog(caveColor, depth);
 
-        // Pod light visibility - underground background is dark unless lit by pod
-        vec2 podScreenPos = (uPodPos - uCameraPos) / uSize + 0.5;
-        float distToPodScreen = length(uv - podScreenPos);
-        float lightR = uPodLightRadius / max(uSizeX, uSizeY);
-        float podVisibility = smoothstep(lightR * 1.5, 0.0, distToPodScreen);
-        // Surface transition keeps some ambient light
-        float surfaceAmbient = smoothstep(400.0, 0.0, depth) * 0.6;
+        // --- Pod light visibility using WORLD-SPACE distance ---
+        // This must match the terrain shader's fog of war for visual coherence.
+        // Convert fragment's approximate world tile position
+        vec2 bgWorldTile = worldPos / uSize * vec2(uSizeX, uSizeY);
+        // Use pod position in world tiles vs camera-relative fragment position
+        vec2 fragWorldApprox = uCameraPos + (uv - 0.5) * uSize;
+        float distToPodWorld = length(fragWorldApprox - uPodPos);
+
+        // Three-zone fog matching terrain shader
+        float innerRadius = uPodLightRadius * 0.8;
+        float midRadius   = uPodLightRadius * 2.0;
+        float outerRadius = uPodLightRadius * 4.0;
+
+        float innerFog = 1.0 - smoothstep(0.0, innerRadius, distToPodWorld);
+        float midFog   = (1.0 - smoothstep(innerRadius, midRadius, distToPodWorld)) * 0.6;
+        float outerFog = (1.0 - smoothstep(midRadius, outerRadius, distToPodWorld)) * 0.15;
+
+        float podVisibility = innerFog + midFog + outerFog;
+
+        // Minimum ambient — caves are never pure black
+        float depthAmbient = mix(0.08, 0.03, clamp(depth / 7000.0, 0.0, 1.0));
+        podVisibility = max(podVisibility, depthAmbient);
+
+        // Surface transition: full daylight above ground
+        float surfaceAmbient = smoothstep(500.0, -50.0, depth) * 0.85;
         podVisibility = max(podVisibility, surfaceAmbient);
+
+        // Volcanic/hell zones have ambient glow
+        float volcanicGlow = smoothstep(3000.0, 5000.0, depth) * 0.12;
+        float hellGlow = smoothstep(5000.0, 7000.0, depth) * 0.08;
+        podVisibility = max(podVisibility, volcanicGlow + hellGlow);
+
         caveColor *= podVisibility;
 
-        caveColor += renderHeadlight(uv, worldPos, depth);
+        // Headlight volumetric glow (world-space)
+        vec2 headlightWorldPos = uCameraPos + (uv - 0.5) * uSize;
+        caveColor += renderHeadlight(headlightWorldPos, depth);
+
         finalColor = mix(finalColor, caveColor, undergroundBlend);
     }
 
-    // Transition zone: dirt ceiling fading in
-    float transitionZone = smoothstep(100.0, SAND_END, depth)
-                         * (1.0 - smoothstep(SAND_END, TOPSOIL_END * 0.5, depth));
+    // Transition zone: dirt ceiling fading in (smoother)
+    float transitionZone = smoothstep(80.0, SAND_END, depth)
+                         * (1.0 - smoothstep(SAND_END, TOPSOIL_END * 0.4, depth));
     if (transitionZone > 0.0) {
         float ceilingNoise = fbm2(worldPos * 0.002 + vec2(0.0, depth * 0.001), 4);
         float ceilingMask = smoothstep(0.3, 0.0, uv.y + ceilingNoise * 0.15 - 0.1);
-        vec3 dirtColor = vec3(0.12, 0.08, 0.05);
-        finalColor = mix(finalColor, dirtColor, ceilingMask * transitionZone * 0.7);
+        vec3 dirtColor = vec3(0.16, 0.12, 0.08);
+        finalColor = mix(finalColor, dirtColor, ceilingMask * transitionZone * 0.6);
     }
 
-    // Vignette (stronger underground)
-    float vignette = 1.0 - dot(uv - 0.5, uv - 0.5) * 0.8;
+    // Subtle vignette
+    float vignette = 1.0 - dot(uv - 0.5, uv - 0.5) * 0.5;
     vignette = clamp(vignette, 0.0, 1.0);
-    float vignetteStrength = mix(0.15, 0.5, undergroundBlend);
+    float vignetteStrength = mix(0.06, 0.22, undergroundBlend);
     finalColor *= mix(1.0, vignette, vignetteStrength);
 
     fragColor = vec4(clamp(finalColor, 0.0, 1.0), 1.0);

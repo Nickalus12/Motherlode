@@ -35,6 +35,15 @@ flutter:
     - assets/images/drills/drill_4/
     - assets/images/drills/drill_5/
     - assets/images/drills/drill_6/
+    - assets/images/robot/idle/
+    - assets/images/robot/drill/
+    - assets/images/robot/fly/
+    - assets/images/robot/walk_east/
+    - assets/images/robot/walk_west/
+    - assets/images/robot/death/
+    - assets/images/robot/pickup/
+    - assets/images/robot/hover/
+    - assets/images/robot/rotations/
     - assets/images/buildings/
     - assets/images/backgrounds/
     - assets/images/items/ores/
